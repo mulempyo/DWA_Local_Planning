@@ -1,0 +1,7 @@
+<library path="lib/libdwa_planner">
+    <class name="dwa/DwaPlanner" type="dwa::DwaPlanner" base_class_type="nav_core::BaseLocalPlanner">
+        <description>
+            my own dwa planner
+        </description>
+    </class>
+</library>
