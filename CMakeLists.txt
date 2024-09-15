@@ -1,49 +1,45 @@
 cmake_minimum_required(VERSION 3.0.2)
-project(dwa_planner)
+project(dwa_planner_ros)
 
+## Compile as C++11, supported in ROS Kinetic and newer
+# add_compile_options(-std=c++11)
+
+## Find catkin macros and libraries
+## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
+## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
+  base_local_planner
   costmap_2d
-  geometry_msgs
   nav_core
+  nav_msgs
   pluginlib
   roscpp
-  tf2_ros
-  sensor_msgs
+  tf
+  tf2
 )
+
+# Eigen3
+find_package(Eigen3 REQUIRED)
 
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES dwa_planner
-  CATKIN_DEPENDS costmap_2d geometry_msgs nav_core pluginlib roscpp tf2_ros sensor_msgs
+  CATKIN_DEPENDS 
+    base_local_planner 
+    costmap_2d
+    nav_core 
+    nav_msgs 
+    pluginlib 
+    roscpp 
+    tf 
+    tf2
 )
-
 
 include_directories(
   include
   ${catkin_INCLUDE_DIRS}
+  ${EIGEN3_INCLUDE_DIRS}
 )
 
-## Declare a C++ library
-add_library(dwa_planner
-   src/dwa_planner.cpp
-)
-
-target_link_libraries(${PROJECT_NAME}
-  ${catkin_LIBRARIES}
-  base_local_planner
-)
-
-install(TARGETS ${PROJECT_NAME}
-  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-)
-
-install(FILES pure_pursuit_planner_plugin.xml
-  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
-)
-
-install(DIRECTORY include/${PROJECT_NAME}/
-  DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
-)
-
-
-
+add_library(${PROJECT_NAME} src/dwa_planner_ros.cpp src/dwa_planner.cpp)
+target_link_libraries(${PROJECT_NAME} ${catkin_LIBRARIES})
