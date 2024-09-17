@@ -113,4 +113,3 @@ private:
 }  // namespace dwa
 
 #endif  // DWA_PLANNER_ROS_H
-
