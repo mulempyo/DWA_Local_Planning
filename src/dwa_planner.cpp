@@ -17,8 +17,8 @@ DWAPlanner::DWAPlanner(base_local_planner::CostmapModel* costmap_model,
   map_frame_ = "map";
   max_vel_x_ = 0.55;
   min_vel_x_ = 0.0;
-  max_vel_theta_ = 1.2;
-  min_vel_theta_ = -1.2;
+  max_vel_theta_ = 2.5;
+  min_vel_theta_ = -2.5;
   acc_lim_x_ = 0.25;
   acc_lim_theta_ = 1.2;
   control_period_ = 0.2;
@@ -27,7 +27,7 @@ DWAPlanner::DWAPlanner(base_local_planner::CostmapModel* costmap_model,
   vx_samples_ = 10;
   vth_samples_ = 20;
   path_distance_bias_ = 32.0;
-  goal_distance_bias_ = 24.0;
+  goal_distance_bias_ = 40.0;
   occdist_scale_ = 0.01;
 }
 

@@ -123,4 +123,3 @@ private:
 }  // namespace dwa_planner
 
 #endif  // DWA_PLANNER_H
-

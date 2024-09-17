@@ -58,8 +58,8 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
     transform_tolerance_ = 0.5;
     max_vel_x_ = 0.55;
     min_vel_x_ = 0.0;
-    max_vel_theta_ = 1.2;
-    min_vel_theta_ = -1.2;
+    max_vel_theta_ = 2.5;
+    min_vel_theta_ = -2.5;
     acc_lim_x_ = 0.25;
     acc_lim_theta_ = 1.2;
     control_period_ = 0.2;
@@ -185,23 +185,23 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
   {
     cmd_vel.linear.x = dwa_cmd_vel_x;
     cmd_vel.angular.z = dwa_cmd_vel_theta;
-    return true;
-  }
-  
-  geometry_msgs::PoseStamped robot_pose;
-  costmap_ros_->getRobotPose(robot_pose);
-  geometry_msgs::PoseStamped global_plan_ = transformed_plan.back();
 
-  double dx = robot_pose.pose.position.x - global_plan_.pose.position.x;
-  double dy = robot_pose.pose.position.y - global_plan_.pose.position.y;
+    geometry_msgs::PoseStamped robot_pose;
+    costmap_ros_->getRobotPose(robot_pose);
+    geometry_msgs::PoseStamped global_plan_ = transformed_plan.back();
 
-  if (hypot(dx, dy) < xy_goal_tolerance_) {
-    cmd_vel.linear.x = 0.0;
-    cmd_vel.angular.z = 0.0;
-    goal_reached_ = true;
-    ROS_INFO("Goal reached.");
-  }
-   return true;
+    double dx = robot_pose.pose.position.x - global_plan_.pose.position.x;
+    double dy = robot_pose.pose.position.y - global_plan_.pose.position.y;
+
+    if (hypot(dx, dy) <= xy_goal_tolerance_) {
+      cmd_vel.linear.x = 0.0;
+      cmd_vel.angular.z = 0.0;
+      goal_reached_ = true;
+      ROS_INFO("Goal reached.");
+    }
+      return true;
+   }
+
 }
 
 bool DWAPlannerROS::isGoalReached()
@@ -225,4 +225,3 @@ void DWAPlannerROS::publishGlobalPlan(const std::vector<geometry_msgs::PoseStamp
 }
 
 } // namespace dwa
-
