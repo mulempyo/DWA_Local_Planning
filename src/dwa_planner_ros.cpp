@@ -111,18 +111,18 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
 
 void DWAPlannerROS::laserCallback(const sensor_msgs::LaserScan& scan)
 {
-    float distance = scan.ranges[0];
-    if (distance < scan.range_min - 0.05)
-    {
-      ROS_WARN("Obstacle within 5 cm!");
-    }
-    else if (scan.range_min - 0.05 <= distance < scan.range_min)
-    {
-      ROS_WARN("Obstacle within 10 cm!");
-    }
-    else if(scan.range_min <= distance == scan.range_min + 0.5)
+    float distance = scan.ranges[180];
+    if (distance >= scan.range_min && distance && distance < (scan.range_min + 0.05) )
     {
       ROS_WARN("Obstacle within 15 cm!");
+    }
+    else if ((scan.range_min + 0.05) <= distance && distance < (scan.range_min + 0.1))
+    {
+      ROS_WARN("Obstacle within 20 cm!");
+    }
+    else if(scan.ranges[7] <= distance )
+    {
+      ROS_WARN("Obstacle within 25 cm!");
     }
   
 }
