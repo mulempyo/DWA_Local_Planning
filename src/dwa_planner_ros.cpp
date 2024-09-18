@@ -1,6 +1,9 @@
 #include <chrono>
 #include <pluginlib/class_list_macros.h>
+#include <angles/angles.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include "dwa_planner_ros/dwa_planner_ros.h"
+#include <sensor_msgs/LaserScan.h>
 
 // register this planner as a BaseLocalPlanner plugin
 PLUGINLIB_EXPORT_CLASS(dwa_planner_ros::DWAPlannerROS, nav_core::BaseLocalPlanner)
@@ -8,7 +11,11 @@ PLUGINLIB_EXPORT_CLASS(dwa_planner_ros::DWAPlannerROS, nav_core::BaseLocalPlanne
 namespace dwa_planner_ros {
 
 DWAPlannerROS::DWAPlannerROS()
-  : initialized_(false), size_x_(0), size_y_(0), goal_reached_(false){}
+  : initialized_(false), size_x_(0), size_y_(0), goal_reached_(false){
+
+ros::NodeHandle nh;
+laser_sub_ = nh.subscribe("/scan", 1, &DWAPlannerROS::laserCallback, this);
+}
 
 DWAPlannerROS::~DWAPlannerROS()
 {
@@ -46,28 +53,27 @@ void DWAPlannerROS::allocateMemory()
 
 void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d::Costmap2DROS* costmap_ros)
 {
+
   // check if the plugin is already initialized
   if (!initialized_)
-  {
-    // create Node Handle with name of plugin (as used in move_base for loading)
+  { 
     ros::NodeHandle private_nh("~/" + name);
-    
-    odom_topic_ = "/odometry/filtered";
-    map_frame_ = "map";
-    xy_goal_tolerance_ = 0.2;
-    transform_tolerance_ = 0.5;
-    max_vel_x_ = 0.55;
-    min_vel_x_ = 0.0;
-    max_vel_theta_ = 2.5;
-    min_vel_theta_ = -2.5;
-    acc_lim_x_ = 0.25;
-    acc_lim_theta_ = 1.2;
-    control_period_ = 0.2;
+    private_nh.param("odom_topic", odom_topic_, std::string("/odometry/filtered"));
+    private_nh.param("map_frame", map_frame_, std::string("map"));
+    private_nh.param("xy_goal_tolerance", xy_goal_tolerance_, 0.2);
+    private_nh.param("transform_tolerance", transform_tolerance_, 0.5);
+    private_nh.param("max_vel_x", max_vel_x_, 0.55);
+    private_nh.param("min_vel_x", min_vel_x_, 0.0);
+    private_nh.param("max_vel_theta", max_vel_theta_, 2.5);
+    private_nh.param("min_vel_theta", min_vel_theta_, -2.5);
+    private_nh.param("acc_lim_x", acc_lim_x_, 0.25);
+    private_nh.param("acc_lim_theta", acc_lim_theta_, 1.2);
+    private_nh.param("control_period", control_period_, 0.2);
 
     // init other variables
     tf_ = tf;
     costmap_ros_ = costmap_ros;
-    costmap_ = costmap_ros_->getCostmap();  // locking should be done in MoveBase.
+    costmap_ = costmap_ros_->getCostmap();  
     size_x = costmap_->getSizeInCellsX();
     size_y = costmap_->getSizeInCellsY();
     resolution = costmap_->getResolution();
@@ -102,6 +108,25 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
   }
 }
 
+
+void DWAPlannerROS::laserCallback(const sensor_msgs::LaserScan& scan)
+{
+    float distance = scan.ranges[0];
+    if (distance < scan.range_min - 0.05)
+    {
+      ROS_WARN("Obstacle within 5 cm!");
+    }
+    else if (scan.range_min - 0.05 <= distance < scan.range_min)
+    {
+      ROS_WARN("Obstacle within 10 cm!");
+    }
+    else if(scan.range_min <= distance == scan.range_min + 0.5)
+    {
+      ROS_WARN("Obstacle within 15 cm!");
+    }
+  
+}
+
 bool DWAPlannerROS::setPlan(const std::vector<geometry_msgs::PoseStamped>& plan)
 {
   if (!initialized_) {
@@ -110,6 +135,7 @@ bool DWAPlannerROS::setPlan(const std::vector<geometry_msgs::PoseStamped>& plan)
   }
 
   goal_reached_ = false;
+   rotate = true;
 
   ROS_WARN("start Plan");
   return planner_util_.setPlan(plan);
@@ -124,33 +150,54 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
     return false;
   }
 
+  // Get the current robot pose
   costmap_ros_->getRobotPose(current_pose_);
   double robot_pose_x = current_pose_.pose.position.x;
   double robot_pose_y = current_pose_.pose.position.y; 
   double robot_pose_theta = tf2::getYaw(current_pose_.pose.orientation);
 
+  // Get the current robot velocity
   geometry_msgs::PoseStamped robot_vel_tf;
   odom_helper_.getRobotVel(robot_vel_tf);
   double robot_vel_x = robot_vel_tf.pose.position.x;
   double robot_vel_theta = tf2::getYaw(robot_vel_tf.pose.orientation);
 
+  // Get the transformed global plan
   std::vector<geometry_msgs::PoseStamped> transformed_plan;
   transformed_plan.clear();
   if (!planner_util_.getLocalPlan(current_pose_, transformed_plan)) {
     ROS_ERROR("Could not get local plan");
     return false;
   }
-  geometry_msgs::PoseStamped goal_pose = transformed_plan.back();
 
+  // If the plan is empty, return false
+  if (transformed_plan.empty()) {
+    ROS_WARN("Transformed plan is empty");
+    return false;
+  }
+
+  // Get the first point of the global plan as the initial goal
+  geometry_msgs::PoseStamped goal_pose = transformed_plan.back();
+  double yaw = getYaw(current_pose_);
+
+  // Calculate the goal direction from the robot's current pose to the goal pose
+  double target_yaw = atan2(goal_pose.pose.position.y - robot_pose_y, goal_pose.pose.position.x - robot_pose_x);
+  double yaw_error = angles::shortest_angular_distance(yaw,target_yaw);
+  
+  // If the yaw error is significant, perform a rotational correction
+  if (fabs(yaw_error) > 0.1 && rotate == true) {  // Threshold to decide when to rotate in place (0.1 rad)
+    cmd_vel.linear.x = 0.0;
+    cmd_vel.angular.z = 0.5;  // Rotate proportionally to the yaw error
+  }else{
+  rotate = false;
+  // Once the robot is oriented correctly, proceed with normal DWA planning
   const unsigned char* charmap = costmap_->getCharMap();
 
   if (charmap_ == NULL || size_x_ != size_x || size_y_ != size_y)
   {
     freeMemory();
-
     size_x_ = size_x;
     size_y_ = size_y;
-
     allocateMemory();
   }
 
@@ -201,7 +248,7 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
     }
       return true;
    }
-
+  } 
 }
 
 bool DWAPlannerROS::isGoalReached()
@@ -215,6 +262,14 @@ bool DWAPlannerROS::isGoalReached()
   return goal_reached_;
 }
 
+double DWAPlannerROS::getYaw(const geometry_msgs::PoseStamped& pose) {
+  tf2::Quaternion q;
+  tf2::fromMsg(pose.pose.orientation, q);
+  double roll, pitch, yaw;
+  tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
+  return yaw;
+}
+
 void DWAPlannerROS::publishGlobalPlan(const std::vector<geometry_msgs::PoseStamped>& global_plan)
 {
   nav_msgs::Path gui_path;
@@ -225,3 +280,4 @@ void DWAPlannerROS::publishGlobalPlan(const std::vector<geometry_msgs::PoseStamp
 }
 
 } // namespace dwa
+

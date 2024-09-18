@@ -13,22 +13,20 @@ DWAPlanner::DWAPlanner(base_local_planner::CostmapModel* costmap_model,
   , circumscribed_radius_(circumscribed_radius)
 {
   candidate_paths_pub_ = nh.advertise<nav_msgs::Path>("dwa_candidate_paths", 1);
-  
-  map_frame_ = "map";
-  max_vel_x_ = 0.55;
-  min_vel_x_ = 0.0;
-  max_vel_theta_ = 2.5;
-  min_vel_theta_ = -2.5;
-  acc_lim_x_ = 0.25;
-  acc_lim_theta_ = 1.2;
-  control_period_ = 0.2;
-
-  sim_time_samples_ = 10;
-  vx_samples_ = 10;
-  vth_samples_ = 20;
-  path_distance_bias_ = 32.0;
-  goal_distance_bias_ = 40.0;
-  occdist_scale_ = 0.01;
+  nh.param("map_frame", map_frame_, std::string("map"));
+  nh.param("max_vel_x", max_vel_x_, 0.55);
+  nh.param("min_vel_x", min_vel_x_, 0.0);
+  nh.param("max_vel_theta", max_vel_theta_, 2.5);
+  nh.param("min_vel_theta", min_vel_theta_, -2.5);
+  nh.param("acc_lim_x", acc_lim_x_, 0.25);
+  nh.param("acc_lim_theta", acc_lim_theta_, 1.2);
+  nh.param("control_period", control_period_, 0.2);
+  nh.param("path_distance_bias", path_distance_bias_, 32.0);
+  nh.param("goal_distance_bias", goal_distance_bias_, 40.0);
+  nh.param("occdist_scale", occdist_scale_, 0.01);
+  nh.param("sim_time_samples", sim_time_samples_, 10);
+  nh.param("vx_samples", vx_samples_, 10);
+  nh.param("vth_samples", vth_samples_, 20);
 }
 
 DWAPlanner::~DWAPlanner() {}
