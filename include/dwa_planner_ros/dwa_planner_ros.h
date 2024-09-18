@@ -11,11 +11,13 @@
 #include <base_local_planner/odometry_helper_ros.h>
 #include <base_local_planner/local_planner_util.h>
 #include "dwa_planner_ros/dwa_planner.h"
+#include <sensor_msgs/LaserScan.h>
 
 namespace dwa_planner_ros{
 
 class DWAPlannerROS: public nav_core::BaseLocalPlanner {
 public:
+
   DWAPlannerROS();
   ~DWAPlannerROS();
 
@@ -27,6 +29,8 @@ public:
    * @param costmap_ros A pointer to the costmap_2d::Costmap2DROS.
    */
   void initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d::Costmap2DROS* costmap_ros);
+
+  void laserCallback(const sensor_msgs::LaserScan& scan);
 
   /**
    * @brief Set the global plan for the local planner.
@@ -51,6 +55,8 @@ public:
    */
   bool isGoalReached();
 
+  ros::Subscriber laser_sub_;
+
 private:
   /**
    * @brief Allocates memory for the costmap.
@@ -69,7 +75,10 @@ private:
    */
   void publishGlobalPlan(const std::vector<geometry_msgs::PoseStamped>& global_plan);
 
+  double getYaw(const geometry_msgs::PoseStamped& pose);
+
   bool initialized_;            ///< Whether the planner is initialized or not.
+  bool rotate;
   bool goal_reached_;           ///< Whether the goal is reached or not.
   int size_x_;                  ///< Size of the costmap in the x direction.
   int size_y_;                  ///< Size of the costmap in the y direction.
