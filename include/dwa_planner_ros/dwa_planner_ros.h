@@ -31,6 +31,7 @@ public:
   void initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d::Costmap2DROS* costmap_ros);
 
   void laserCallback(const sensor_msgs::LaserScan& scan);
+  bool checkObstacle(const double range, const double robot_x, const double robot_y, const double robot_theta, const double scan_angle);
 
   /**
    * @brief Set the global plan for the local planner.
@@ -80,13 +81,14 @@ private:
   bool initialized_;            ///< Whether the planner is initialized or not.
   bool rotate;
   bool goal_reached_;           ///< Whether the goal is reached or not.
+  bool dynamic_obstacle_detected;
   int size_x_;                  ///< Size of the costmap in the x direction.
   int size_y_;                  ///< Size of the costmap in the y direction.
   int size_x;
   int size_y;
   unsigned char** charmap_ = nullptr;      ///< The costmap data.
-  costmap_2d::Costmap2DROS* costmap_ros_;  ///< Pointer to the costmap.
-  costmap_2d::Costmap2D* costmap_;
+  costmap_2d::Costmap2DROS* costmap_ros_ = nullptr;  
+  costmap_2d::Costmap2D* costmap_; ///< Pointer to the costmap.
   base_local_planner::CostmapModel* costmap_model_ = nullptr;  ///< Costmap model used for collision checking.
   DWAPlanner* planner_ = nullptr;         ///< The DWA planner instance.
   ros::Publisher global_plan_pub_;  ///< Publisher for the global plan.

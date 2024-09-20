@@ -35,7 +35,7 @@ bool DWAPlanner::computeVelocityCommands(const double& robot_vel_x, const double
                                          const double& robot_pose_x, const double& robot_pose_y, const double& robot_pose_theta,
                                          const std::vector<std::vector<double>>& global_plan, unsigned char const* const* costmap,
                                          int size_x, int size_y, double resolution, double origin_x, double origin_y,
-                                         double& cmd_vel_x, double& cmd_vel_theta)
+                                         double& cmd_vel_x, double& cmd_vel_theta, const std::vector<geometry_msgs::PoseStamped> transformed_plan, costmap_2d::Costmap2DROS* costmap_ros)
 {
   std::vector<std::pair<double, double>> sample_vels;
   if (!samplePotentialVels(robot_vel_x, robot_vel_theta, sample_vels)){
@@ -49,7 +49,8 @@ bool DWAPlanner::computeVelocityCommands(const double& robot_vel_x, const double
 
   while (it != sample_vels.end()) {
     std::vector<std::vector<double>> traj;
-    generateTrajectory(robot_vel_x, robot_vel_theta, robot_pose_x, robot_pose_y, robot_pose_theta, it->first, it->second, traj);
+    costmap_ros_ = costmap_ros;
+    generateTrajectory(robot_vel_x, robot_vel_theta, robot_pose_x, robot_pose_y, robot_pose_theta, it->first, it->second, traj, transformed_plan, costmap_ros_);
 
     if (!isPathFeasible(traj)) {
       ++it;
@@ -109,17 +110,32 @@ double DWAPlanner::scoreTrajectory(const std::vector<std::vector<double>>& traj,
 
 void DWAPlanner::generateTrajectory(const double& robot_vel_x, const double& robot_vel_theta,
                                     const double& robot_pose_x, const double& robot_pose_y, const double& robot_pose_theta,
-                                    const double& sample_vel_x, const double& sample_vel_theta, std::vector<std::vector<double>>& traj)
+                                    const double& sample_vel_x, const double& sample_vel_theta, std::vector<std::vector<double>>& traj, 
+                                    const std::vector<geometry_msgs::PoseStamped>transformed_plan, costmap_2d::Costmap2DROS* costmap_ros_)
 {
   double pose_x = robot_pose_x;
   double pose_y = robot_pose_y;
   double pose_theta = robot_pose_theta;
   double vel_x = robot_vel_x;
   double vel_theta = robot_vel_theta;
+  unsigned int start_mx, start_my, goal_mx, goal_my;
+  geometry_msgs::PoseStamped current_pose_;
+  geometry_msgs::PoseStamped goal = transformed_plan.back();
 
+  costmap_ros_->getRobotPose(current_pose_);   
+  double start_wx = current_pose_.pose.position.x;
+  double start_wy = current_pose_.pose.position.y;
+  double goal_wx = goal.pose.position.x;
+  double goal_wy = goal.pose.position.y;
+
+  if (!costmap_->worldToMap(start_wx, start_wy, start_mx, start_my) ||
+      !costmap_->worldToMap(goal_wx, goal_wy, goal_mx, goal_my)) {
+      ROS_WARN("Cannot convert world coordinates to map coordinates");
+      }
+  
   for (int i = 0; i < sim_time_samples_; ++i) {
-    vel_x = computeNewVelocities(sample_vel_x, vel_x, acc_lim_x_);
-    vel_theta = computeNewVelocities(sample_vel_theta, vel_theta, acc_lim_theta_);
+    vel_x = computeNewLinearVelocities(sample_vel_x, vel_x, acc_lim_x_);
+    vel_theta = computeNewAngularVelocities(sample_vel_theta, vel_theta, acc_lim_theta_, start_mx, start_my, goal_mx, goal_my);
     computeNewPose(pose_x, pose_y, pose_theta, vel_x, vel_theta);
     traj.push_back({pose_x, pose_y, pose_theta});
   }
@@ -138,13 +154,52 @@ void DWAPlanner::computeNewPose(double& pose_x, double& pose_y, double& pose_the
   pose_theta += vel_theta * control_period_;
 }
 
-double DWAPlanner::computeNewVelocities(const double& target_vel, const double& current_vel, const double& acc_lim)
+double DWAPlanner::computeNewLinearVelocities(const double& target_vel, const double& current_vel, const double& acc_lim)
 {
   if (target_vel < current_vel) {
     return std::max(target_vel, current_vel - acc_lim * control_period_);
   } else {
     return std::min(target_vel, current_vel + acc_lim * control_period_);
   }
+}
+
+double DWAPlanner::computeNewAngularVelocities(const double& target_vel, const double& current_vel, const double& acc_lim, 
+                                        unsigned int start_mx, unsigned int start_my, unsigned int goal_mx, unsigned int goal_my)
+{
+    // Perform Bresenham's line algorithm to check for obstacles along the straight path
+    std::vector<std::pair<int, int>> line_points = bresenhamLine(start_mx, start_my, goal_mx, goal_my);
+
+    bool obstacle_found = false;
+    for (const auto& point : line_points) {
+        unsigned int mx = point.first;
+        unsigned int my = point.second;
+
+        // Get cost from the costmap at each point
+        unsigned char cost = costmap_->getCost(mx, my);
+
+        // Check if there's a lethal obstacle
+        if (cost == costmap_2d::LETHAL_OBSTACLE) {
+            obstacle_found = true;
+            break;
+        }
+        if(cost == costmap_2d::FREE_SPACE){
+          obstacle_found = false;
+        }
+    }
+
+    if (obstacle_found) {
+        if(target_vel < current_vel){
+         return std::max(target_vel, current_vel - acc_lim * control_period_);
+        }else{
+          return std::min(target_vel, current_vel + acc_lim * control_period_);
+        }
+    } else{
+        if(target_vel < current_vel){
+         return std::max(target_vel, current_vel - acc_lim * control_period_)*1.5;
+        }else{
+          return std::min(target_vel, current_vel + acc_lim * control_period_)*1.5;
+        }
+    }
 }
 
 bool DWAPlanner::samplePotentialVels(const double& robot_vel_x, const double& robot_vel_theta,
@@ -213,4 +268,21 @@ void DWAPlanner::publishCandidatePaths(const std::vector<std::vector<std::vector
 
   candidate_paths_pub_.publish(gui_path);
 }
+
+std::vector<std::pair<int, int>> DWAPlanner::bresenhamLine(int x0, int y0, int x1, int y1) {
+        std::vector<std::pair<int, int>> points;
+        int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+        int dy = abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+        int err = (dx > dy ? dx : -dy) / 2, e2;
+
+        while (true) {
+            points.push_back(std::make_pair(x0, y0));
+            if (x0 == x1 && y0 == y1) break;
+            e2 = err;
+            if (e2 > -dx) { err -= dy; x0 += sx; }
+            if (e2 < dy) { err += dx; y0 += sy; }
+        }
+        return points;
+    }
+
 }
