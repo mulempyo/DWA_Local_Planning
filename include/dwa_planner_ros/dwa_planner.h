@@ -7,6 +7,7 @@
 #include <geometry_msgs/Point.h>
 #include <nav_msgs/Path.h>
 #include <costmap_2d/costmap_2d.h>
+#include <costmap_2d/costmap_2d_ros.h>
 #include <base_local_planner/costmap_model.h>
 
 namespace dwa_planner_ros{
@@ -43,7 +44,7 @@ public:
                                const double& robot_pose_x, const double& robot_pose_y, const double& robot_pose_theta,
                                const std::vector<std::vector<double>>& global_plan, unsigned char const* const* costmap,
                                int size_x, int size_y, double resolution, double origin_x, double origin_y,
-                               double& cmd_vel_x, double& cmd_vel_theta);
+                               double& cmd_vel_x, double& cmd_vel_theta, const std::vector<geometry_msgs::PoseStamped> transformed_plan, costmap_2d::Costmap2DROS* costmap_ros);
 
 private:
   /**
@@ -63,8 +64,9 @@ private:
    * @brief Generates a trajectory for the robot.
    */
   void generateTrajectory(const double& robot_vel_x, const double& robot_vel_theta,
-                          const double& robot_pose_x, const double& robot_pose_y, const double& robot_pose_theta,
-                          const double& sample_vel_x, const double& sample_vel_theta, std::vector<std::vector<double>>& traj);
+                                    const double& robot_pose_x, const double& robot_pose_y, const double& robot_pose_theta,
+                                    const double& sample_vel_x, const double& sample_vel_theta, std::vector<std::vector<double>>& traj, 
+                                    const std::vector<geometry_msgs::PoseStamped> global_plan, costmap_2d::Costmap2DROS* costmap_ros_); 
 
   void worldToMap(const double wx, const double wy, int& mx, int& my, const double resolution, const double origin_x, const double origin_y);
 
@@ -76,7 +78,10 @@ private:
   /**
    * @brief Computes the new velocity for the robot considering acceleration limits.
    */
-  double computeNewVelocities(const double& target_vel, const double& current_vel, const double& acc_lim);
+  double computeNewLinearVelocities(const double& target_vel, const double& current_vel, const double& acc_lim);
+
+  double computeNewAngularVelocities(const double& target_vel, const double& current_vel, const double& acc_lim, 
+                                        unsigned int start_mx, unsigned int start_my, unsigned int goal_mx, unsigned int goal_my);
 
   /**
    * @brief Samples potential velocities for the robot to explore.
@@ -92,6 +97,7 @@ private:
    * @brief Publishes candidate paths for visualization.
    */
   void publishCandidatePaths(const std::vector<std::vector<std::vector<double>>>& path_all);
+  std::vector<std::pair<int, int>> bresenhamLine(int x0, int y0, int x1, int y1);
 
   // Parameters
   double max_vel_x_;
@@ -110,14 +116,15 @@ private:
   double occdist_scale_;
   std::string map_frame_;
 
-  base_local_planner::CostmapModel* costmap_model_;
+  base_local_planner::CostmapModel* costmap_model_ = nullptr;
   std::vector<geometry_msgs::Point> footprint_spec_;
   double inscribed_radius_;
   double circumscribed_radius_;
 
   // ROS
   ros::Publisher candidate_paths_pub_;
-  costmap_2d::Costmap2D* costmap_;
+  costmap_2d::Costmap2D* costmap_ = nullptr;
+  costmap_2d::Costmap2DROS* costmap_ros_;
 };
 
 }  // namespace dwa_planner

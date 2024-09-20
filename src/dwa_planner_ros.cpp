@@ -11,8 +11,8 @@ PLUGINLIB_EXPORT_CLASS(dwa_planner_ros::DWAPlannerROS, nav_core::BaseLocalPlanne
 namespace dwa_planner_ros {
 
 DWAPlannerROS::DWAPlannerROS()
-  : initialized_(false), size_x_(0), size_y_(0), goal_reached_(false){
-
+  : initialized_(false), size_x_(0), size_y_(0), goal_reached_(false)
+{
 ros::NodeHandle nh;
 laser_sub_ = nh.subscribe("/scan", 1, &DWAPlannerROS::laserCallback, this);
 }
@@ -44,7 +44,9 @@ void DWAPlannerROS::freeMemory()
 
 void DWAPlannerROS::allocateMemory()
 {
-  assert(charmap_ == NULL);
+  if(charmap_ != NULL){
+     freeMemory();
+   }
 
   charmap_ = new unsigned char*[size_x_];
   for (int i = 0; i < size_x_; i++)
@@ -111,20 +113,62 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
 
 void DWAPlannerROS::laserCallback(const sensor_msgs::LaserScan& scan)
 {
-    float distance = scan.ranges[180];
-    if (distance >= scan.range_min && distance && distance < (scan.range_min + 0.05) )
-    {
-      ROS_WARN("Obstacle within 15 cm!");
+    dynamic_obstacle_detected = false;
+    bool front_obstacle_detected = false;
+    bool back_obstacle_detected = false;
+ 
+    std::vector<float> front_x(scan.ranges.begin() + 80, scan.ranges.begin() + 280);
+    std::vector<float> back_x_1(scan.ranges.begin(), scan.ranges.begin() + 80); // 0~79
+    std::vector<float> back_x_2(scan.ranges.begin() + 280, scan.ranges.begin() + 360);  // 281~359
+
+    std::vector<float> combined_ranges;
+    combined_ranges.insert(combined_ranges.end(), back_x_1.begin(), back_x_1.end());
+    combined_ranges.insert(combined_ranges.end(), back_x_2.begin(), back_x_2.end());
+
+    costmap_ros_->getRobotPose(current_pose_);
+    double robot_x = current_pose_.pose.position.x;
+    double robot_y = current_pose_.pose.position.y;
+    double robot_theta = tf2::getYaw(current_pose_.pose.orientation);
+
+    for(int i = 0; i < front_x.size(); ++i){
+     if (front_x[i] <= (scan.range_min + 0.05)) //Obstacle within front: 15 cm
+      {
+        float scan_angle = scan.angle_min + i * scan.angle_increment;
+        front_obstacle_detected = checkObstacle(front_x[i], robot_x, robot_y, robot_theta, scan_angle);
+      }
     }
-    else if ((scan.range_min + 0.05) <= distance && distance < (scan.range_min + 0.1))
-    {
-      ROS_WARN("Obstacle within 20 cm!");
-    }
-    else if(scan.ranges[7] <= distance )
-    {
-      ROS_WARN("Obstacle within 25 cm!");
+
+    for(int j = 0; j < combined_ranges.size(); ++j){
+     if(combined_ranges[j] <= (scan.range_min + 0.18)) //Obstacle within back: 28cm
+      {
+        float scan_angle = scan.angle_min + j * scan.angle_increment;
+        back_obstacle_detected = checkObstacle(combined_ranges[j], robot_x, robot_y, robot_theta, scan_angle);
+      }
     }
   
+  if(front_obstacle_detected == true || back_obstacle_detected == true){
+    dynamic_obstacle_detected = true;
+  }
+}
+
+bool DWAPlannerROS::checkObstacle(const double range, const double robot_x, const double robot_y, const double robot_theta, const double scan_angle)
+{
+    double obstacle_x = robot_x + range * cos(robot_theta + scan_angle);
+    double obstacle_y = robot_y + range * sin(robot_theta + scan_angle);
+    unsigned int obstacle_mx, obstacle_my;
+
+    if (!costmap_->worldToMap(obstacle_x, obstacle_y, obstacle_mx, obstacle_my)) {
+        ROS_WARN("invalid map frame");
+        return false;
+    }
+
+    unsigned char cost = costmap_->getCost(obstacle_mx, obstacle_my);
+    if(cost == costmap_2d::LETHAL_OBSTACLE){
+      return false;
+    }
+    else{
+      return true;
+    }
 }
 
 bool DWAPlannerROS::setPlan(const std::vector<geometry_msgs::PoseStamped>& plan)
@@ -135,7 +179,7 @@ bool DWAPlannerROS::setPlan(const std::vector<geometry_msgs::PoseStamped>& plan)
   }
 
   goal_reached_ = false;
-   rotate = true;
+  rotate = true;
 
   ROS_WARN("start Plan");
   return planner_util_.setPlan(plan);
@@ -188,7 +232,7 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
   if (fabs(yaw_error) > 0.1 && rotate == true) {  // Threshold to decide when to rotate in place (0.1 rad)
     cmd_vel.linear.x = 0.0;
     cmd_vel.angular.z = 0.5;  // Rotate proportionally to the yaw error
-  }else{
+  }
   rotate = false;
   // Once the robot is oriented correctly, proceed with normal DWA planning
   const unsigned char* charmap = costmap_->getCharMap();
@@ -220,7 +264,7 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
   double dwa_cmd_vel_x, dwa_cmd_vel_theta;
   bool success = planner_->computeVelocityCommands(robot_vel_x, robot_vel_theta, robot_pose_x, robot_pose_y, robot_pose_theta,
                                                    reference_path, charmap_, size_x_, size_y_,
-                                                   resolution, origin_x, origin_y, dwa_cmd_vel_x, dwa_cmd_vel_theta);
+                                                   resolution, origin_x, origin_y, dwa_cmd_vel_x, dwa_cmd_vel_theta, transformed_plan, costmap_ros_);
 
   if (!success)
   {
@@ -230,8 +274,13 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
   }
   else
   {
-    cmd_vel.linear.x = dwa_cmd_vel_x;
-    cmd_vel.angular.z = dwa_cmd_vel_theta;
+    if(dynamic_obstacle_detected){
+      cmd_vel.linear.x = 0;
+      cmd_vel.angular.z = 0;
+    }else{
+      cmd_vel.linear.x = dwa_cmd_vel_x;
+      cmd_vel.angular.z = dwa_cmd_vel_theta;
+    
 
     geometry_msgs::PoseStamped robot_pose;
     costmap_ros_->getRobotPose(robot_pose);
@@ -248,7 +297,7 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
     }
       return true;
    }
-  } 
+  }
 }
 
 bool DWAPlannerROS::isGoalReached()
@@ -280,4 +329,3 @@ void DWAPlannerROS::publishGlobalPlan(const std::vector<geometry_msgs::PoseStamp
 }
 
 } // namespace dwa
-
