@@ -16,7 +16,7 @@ class DWAPlanner {
 public:
   DWAPlanner(base_local_planner::CostmapModel* costmap_model,
              const std::vector<geometry_msgs::Point>& footprint_spec, double inscribed_radius,
-             double circumscribed_radius, ros::NodeHandle& nh);
+             double circumscribed_radius, ros::NodeHandle& nh, costmap_2d::Costmap2DROS* costmap_ros);
 
   ~DWAPlanner();
 
@@ -44,7 +44,7 @@ public:
                                const double& robot_pose_x, const double& robot_pose_y, const double& robot_pose_theta,
                                const std::vector<std::vector<double>>& global_plan, unsigned char const* const* costmap,
                                int size_x, int size_y, double resolution, double origin_x, double origin_y,
-                               double& cmd_vel_x, double& cmd_vel_theta, const std::vector<geometry_msgs::PoseStamped> transformed_plan, costmap_2d::Costmap2DROS* costmap_ros);
+                               double& cmd_vel_x, double& cmd_vel_theta, const std::vector<geometry_msgs::PoseStamped> transformed_plan);
 
 private:
   /**
@@ -66,7 +66,7 @@ private:
   void generateTrajectory(const double& robot_vel_x, const double& robot_vel_theta,
                                     const double& robot_pose_x, const double& robot_pose_y, const double& robot_pose_theta,
                                     const double& sample_vel_x, const double& sample_vel_theta, std::vector<std::vector<double>>& traj, 
-                                    const std::vector<geometry_msgs::PoseStamped> global_plan, costmap_2d::Costmap2DROS* costmap_ros_); 
+                                    const std::vector<geometry_msgs::PoseStamped> global_plan); 
 
   void worldToMap(const double wx, const double wy, int& mx, int& my, const double resolution, const double origin_x, const double origin_y);
 
@@ -123,7 +123,7 @@ private:
 
   // ROS
   ros::Publisher candidate_paths_pub_;
-  costmap_2d::Costmap2D* costmap_ = nullptr;
+  costmap_2d::Costmap2D* costmap_;
   costmap_2d::Costmap2DROS* costmap_ros_;
 };
 

@@ -87,7 +87,7 @@ private:
   int size_x;
   int size_y;
   unsigned char** charmap_ = nullptr;      ///< The costmap data.
-  costmap_2d::Costmap2DROS* costmap_ros_ = nullptr;  
+  costmap_2d::Costmap2DROS* costmap_ros_;  
   costmap_2d::Costmap2D* costmap_; ///< Pointer to the costmap.
   base_local_planner::CostmapModel* costmap_model_ = nullptr;  ///< Costmap model used for collision checking.
   DWAPlanner* planner_ = nullptr;         ///< The DWA planner instance.

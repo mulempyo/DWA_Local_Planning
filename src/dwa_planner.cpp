@@ -6,13 +6,17 @@ namespace dwa_planner_ros {
 
 DWAPlanner::DWAPlanner(base_local_planner::CostmapModel* costmap_model,
                        const std::vector<geometry_msgs::Point>& footprint_spec, double inscribed_radius,
-                       double circumscribed_radius, ros::NodeHandle& nh)
+                       double circumscribed_radius, ros::NodeHandle& nh, costmap_2d::Costmap2DROS* costmap_ros)
   : costmap_model_(costmap_model)
   , footprint_spec_(footprint_spec)
   , inscribed_radius_(inscribed_radius)
   , circumscribed_radius_(circumscribed_radius)
+  , costmap_ros_(costmap_ros)
 {
   candidate_paths_pub_ = nh.advertise<nav_msgs::Path>("dwa_candidate_paths", 1);
+  
+  costmap_ = costmap_ros_->getCostmap();
+
   nh.param("map_frame", map_frame_, std::string("map"));
   nh.param("max_vel_x", max_vel_x_, 0.55);
   nh.param("min_vel_x", min_vel_x_, 0.0);
@@ -35,7 +39,7 @@ bool DWAPlanner::computeVelocityCommands(const double& robot_vel_x, const double
                                          const double& robot_pose_x, const double& robot_pose_y, const double& robot_pose_theta,
                                          const std::vector<std::vector<double>>& global_plan, unsigned char const* const* costmap,
                                          int size_x, int size_y, double resolution, double origin_x, double origin_y,
-                                         double& cmd_vel_x, double& cmd_vel_theta, const std::vector<geometry_msgs::PoseStamped> transformed_plan, costmap_2d::Costmap2DROS* costmap_ros)
+                                         double& cmd_vel_x, double& cmd_vel_theta, const std::vector<geometry_msgs::PoseStamped> transformed_plan)
 {
   std::vector<std::pair<double, double>> sample_vels;
   if (!samplePotentialVels(robot_vel_x, robot_vel_theta, sample_vels)){
@@ -49,8 +53,7 @@ bool DWAPlanner::computeVelocityCommands(const double& robot_vel_x, const double
 
   while (it != sample_vels.end()) {
     std::vector<std::vector<double>> traj;
-    costmap_ros_ = costmap_ros;
-    generateTrajectory(robot_vel_x, robot_vel_theta, robot_pose_x, robot_pose_y, robot_pose_theta, it->first, it->second, traj, transformed_plan, costmap_ros_);
+    generateTrajectory(robot_vel_x, robot_vel_theta, robot_pose_x, robot_pose_y, robot_pose_theta, it->first, it->second, traj, transformed_plan);
 
     if (!isPathFeasible(traj)) {
       ++it;
@@ -111,7 +114,7 @@ double DWAPlanner::scoreTrajectory(const std::vector<std::vector<double>>& traj,
 void DWAPlanner::generateTrajectory(const double& robot_vel_x, const double& robot_vel_theta,
                                     const double& robot_pose_x, const double& robot_pose_y, const double& robot_pose_theta,
                                     const double& sample_vel_x, const double& sample_vel_theta, std::vector<std::vector<double>>& traj, 
-                                    const std::vector<geometry_msgs::PoseStamped>transformed_plan, costmap_2d::Costmap2DROS* costmap_ros_)
+                                    const std::vector<geometry_msgs::PoseStamped>transformed_plan)
 {
   double pose_x = robot_pose_x;
   double pose_y = robot_pose_y;
