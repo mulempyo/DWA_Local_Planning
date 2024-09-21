@@ -122,16 +122,12 @@ void DWAPlanner::generateTrajectory(const double& robot_vel_x, const double& rob
   double vel_x = robot_vel_x;
   double vel_theta = robot_vel_theta;
   unsigned int start_mx, start_my, goal_mx, goal_my;
-  geometry_msgs::PoseStamped current_pose_;
-  geometry_msgs::PoseStamped goal = transformed_plan.back();
-
-  costmap_ros_->getRobotPose(current_pose_);   
-  double start_wx = current_pose_.pose.position.x;
-  double start_wy = current_pose_.pose.position.y;
+ 
+  geometry_msgs::PoseStamped goal = transformed_plan.back();  
   double goal_wx = goal.pose.position.x;
   double goal_wy = goal.pose.position.y;
 
-  if (!costmap_->worldToMap(start_wx, start_wy, start_mx, start_my) ||
+  if (!costmap_->worldToMap(pose_x, pose_y, start_mx, start_my) ||
       !costmap_->worldToMap(goal_wx, goal_wy, goal_mx, goal_my)) {
       ROS_WARN("Cannot convert world coordinates to map coordinates");
       }

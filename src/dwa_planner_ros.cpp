@@ -116,39 +116,34 @@ void DWAPlannerROS::laserCallback(const sensor_msgs::LaserScan& scan)
     dynamic_obstacle_detected = false;
     bool front_obstacle_detected = false;
     bool back_obstacle_detected = false;
-
-    std::vector<float> front_x(scan.ranges.begin() + 80, scan.ranges.begin() + 280); // 80~280
-    std::vector<float> back_x_1(scan.ranges.begin(), scan.ranges.begin() + 80); // 0~80
-    std::vector<float> back_x_2(scan.ranges.begin() + 280, scan.ranges.begin() + 360);  // 280~360
-
-    std::vector<float> combined_ranges;
-    combined_ranges.insert(combined_ranges.end(), back_x_1.begin(), back_x_1.end());
-    combined_ranges.insert(combined_ranges.end(), back_x_2.begin(), back_x_2.end());
-
+  
+    int front_indices[] = {60, 90, 120, 150, 180, 210, 240, 270, 300};
+    int back_indices[] = {0, 15, 30, 45, 315, 330, 345};
+    
     costmap_ros_->getRobotPose(current_pose_);
     double robot_x = current_pose_.pose.position.x;
     double robot_y = current_pose_.pose.position.y;
     double robot_theta = tf2::getYaw(current_pose_.pose.orientation);
 
-    for(int i = 0; i < front_x.size(); ++i){
-     if (front_x[i] <= (scan.range_min + 0.05)) //Obstacle within front: 15 cm
-      {
-        float scan_angle = scan.angle_min + i * scan.angle_increment;
-        front_obstacle_detected = checkObstacle(front_x[i], robot_x, robot_y, robot_theta, scan_angle);
-      }
+    for (int i = 0; i < sizeof(front_indices)/sizeof(front_indices[0]); i++) {
+        int index = front_indices[i];
+         if (scan.ranges[index] >= scan.range_min && scan.ranges[index] <= (scan.range_min + 0.05)) {
+            float scan_angle = scan.angle_min + index * scan.angle_increment;
+            front_obstacle_detected = checkObstacle(scan.ranges[index], robot_x, robot_y, robot_theta, scan_angle);
+        }
     }
 
-    for(int j = 0; j < combined_ranges.size(); ++j){
-     if(combined_ranges[j] <= (scan.range_min + 0.4)) //Obstacle within back: 50cm
-      {
-        float scan_angle = scan.angle_min + j * scan.angle_increment;
-        back_obstacle_detected = checkObstacle(combined_ranges[j], robot_x, robot_y, robot_theta, scan_angle);
-      }
+    for (int j = 0; j < sizeof(back_indices)/sizeof(back_indices[0]); j++) {
+        int index = back_indices[j];
+         if (scan.ranges[index] >= (scan.range_min + 0.1) && scan.ranges[index] <= (scan.range_min + 0.4)) {
+            float scan_angle = scan.angle_min + index * scan.angle_increment;
+            back_obstacle_detected = checkObstacle(scan.ranges[index], robot_x, robot_y, robot_theta, scan_angle);
+        }
     }
-  
-  if(front_obstacle_detected == true || back_obstacle_detected == true){
-    dynamic_obstacle_detected = true;
-  }
+
+    if(front_obstacle_detected == true || back_obstacle_detected == true){
+      dynamic_obstacle_detected = true;
+    }
 }
 
 bool DWAPlannerROS::checkObstacle(const double range, const double robot_x, const double robot_y, const double robot_theta, const double scan_angle)
