@@ -95,7 +95,7 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
     odom_helper_.setOdomTopic(odom_topic_);
 
     planner_ = new DWAPlanner(costmap_model_, footprint_spec_, robot_inscribed_radius_, robot_circumscribed_radius_,
-                              private_nh);
+                              private_nh, costmap_ros_);
 
     global_plan_pub_ = private_nh.advertise<nav_msgs::Path>("dwa_global_plan", 1);
     planner_util_.initialize(tf_, costmap_, global_frame_);
@@ -116,10 +116,10 @@ void DWAPlannerROS::laserCallback(const sensor_msgs::LaserScan& scan)
     dynamic_obstacle_detected = false;
     bool front_obstacle_detected = false;
     bool back_obstacle_detected = false;
- 
-    std::vector<float> front_x(scan.ranges.begin() + 80, scan.ranges.begin() + 280);
-    std::vector<float> back_x_1(scan.ranges.begin(), scan.ranges.begin() + 80); // 0~79
-    std::vector<float> back_x_2(scan.ranges.begin() + 280, scan.ranges.begin() + 360);  // 281~359
+
+    std::vector<float> front_x(scan.ranges.begin() + 80, scan.ranges.begin() + 280); // 80~280
+    std::vector<float> back_x_1(scan.ranges.begin(), scan.ranges.begin() + 80); // 0~80
+    std::vector<float> back_x_2(scan.ranges.begin() + 280, scan.ranges.begin() + 360);  // 280~360
 
     std::vector<float> combined_ranges;
     combined_ranges.insert(combined_ranges.end(), back_x_1.begin(), back_x_1.end());
@@ -139,7 +139,7 @@ void DWAPlannerROS::laserCallback(const sensor_msgs::LaserScan& scan)
     }
 
     for(int j = 0; j < combined_ranges.size(); ++j){
-     if(combined_ranges[j] <= (scan.range_min + 0.18)) //Obstacle within back: 28cm
+     if(combined_ranges[j] <= (scan.range_min + 0.4)) //Obstacle within back: 50cm
       {
         float scan_angle = scan.angle_min + j * scan.angle_increment;
         back_obstacle_detected = checkObstacle(combined_ranges[j], robot_x, robot_y, robot_theta, scan_angle);
@@ -264,7 +264,7 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
   double dwa_cmd_vel_x, dwa_cmd_vel_theta;
   bool success = planner_->computeVelocityCommands(robot_vel_x, robot_vel_theta, robot_pose_x, robot_pose_y, robot_pose_theta,
                                                    reference_path, charmap_, size_x_, size_y_,
-                                                   resolution, origin_x, origin_y, dwa_cmd_vel_x, dwa_cmd_vel_theta, transformed_plan, costmap_ros_);
+                                                   resolution, origin_x, origin_y, dwa_cmd_vel_x, dwa_cmd_vel_theta, transformed_plan);
 
   if (!success)
   {
