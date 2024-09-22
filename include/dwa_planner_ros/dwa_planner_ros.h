@@ -56,6 +56,7 @@ public:
    */
   bool isGoalReached();
 
+  std::vector<geometry_msgs::PoseStamped> global_plan_;
   ros::Subscriber laser_sub_;
 
 private:

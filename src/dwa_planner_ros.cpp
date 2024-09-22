@@ -95,7 +95,7 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
     odom_helper_.setOdomTopic(odom_topic_);
 
     planner_ = new DWAPlanner(costmap_model_, footprint_spec_, robot_inscribed_radius_, robot_circumscribed_radius_,
-                              private_nh, costmap_ros_);
+                              private_nh);
 
     global_plan_pub_ = private_nh.advertise<nav_msgs::Path>("dwa_global_plan", 1);
     planner_util_.initialize(tf_, costmap_, global_frame_);
@@ -116,39 +116,34 @@ void DWAPlannerROS::laserCallback(const sensor_msgs::LaserScan& scan)
     dynamic_obstacle_detected = false;
     bool front_obstacle_detected = false;
     bool back_obstacle_detected = false;
-
-    std::vector<float> front_x(scan.ranges.begin() + 80, scan.ranges.begin() + 280); // 80~280
-    std::vector<float> back_x_1(scan.ranges.begin(), scan.ranges.begin() + 80); // 0~80
-    std::vector<float> back_x_2(scan.ranges.begin() + 280, scan.ranges.begin() + 360);  // 280~360
-
-    std::vector<float> combined_ranges;
-    combined_ranges.insert(combined_ranges.end(), back_x_1.begin(), back_x_1.end());
-    combined_ranges.insert(combined_ranges.end(), back_x_2.begin(), back_x_2.end());
-
+  
+    int front_indices[] = {60, 90, 120, 150, 180, 210, 240, 270, 300};
+    int back_indices[] = {0, 15, 30, 45, 315, 330, 345};
+    
     costmap_ros_->getRobotPose(current_pose_);
     double robot_x = current_pose_.pose.position.x;
     double robot_y = current_pose_.pose.position.y;
     double robot_theta = tf2::getYaw(current_pose_.pose.orientation);
 
-    for(int i = 0; i < front_x.size(); ++i){
-     if (front_x[i] <= (scan.range_min + 0.05)) //Obstacle within front: 15 cm
-      {
-        float scan_angle = scan.angle_min + i * scan.angle_increment;
-        front_obstacle_detected = checkObstacle(front_x[i], robot_x, robot_y, robot_theta, scan_angle);
-      }
+    for (int i = 0; i < sizeof(front_indices)/sizeof(front_indices[0]); i++) {
+        int index = front_indices[i];
+         if (scan.ranges[index] >= scan.range_min && scan.ranges[index] <= (scan.range_min + 0.05)) {
+            float scan_angle = scan.angle_min + index * scan.angle_increment;
+            front_obstacle_detected = checkObstacle(scan.ranges[index], robot_x, robot_y, robot_theta, scan_angle);
+        }
     }
 
-    for(int j = 0; j < combined_ranges.size(); ++j){
-     if(combined_ranges[j] <= (scan.range_min + 0.4)) //Obstacle within back: 50cm
-      {
-        float scan_angle = scan.angle_min + j * scan.angle_increment;
-        back_obstacle_detected = checkObstacle(combined_ranges[j], robot_x, robot_y, robot_theta, scan_angle);
-      }
+    for (int j = 0; j < sizeof(back_indices)/sizeof(back_indices[0]); j++) {
+        int index = back_indices[j];
+         if (scan.ranges[index] >= (scan.range_min + 0.1) && scan.ranges[index] <= (scan.range_min + 0.4)) {
+            float scan_angle = scan.angle_min + index * scan.angle_increment;
+            back_obstacle_detected = checkObstacle(scan.ranges[index], robot_x, robot_y, robot_theta, scan_angle);
+        }
     }
-  
-  if(front_obstacle_detected == true || back_obstacle_detected == true){
-    dynamic_obstacle_detected = true;
-  }
+
+    if(front_obstacle_detected == true || back_obstacle_detected == true){
+      dynamic_obstacle_detected = true;
+    }
 }
 
 bool DWAPlannerROS::checkObstacle(const double range, const double robot_x, const double robot_y, const double robot_theta, const double scan_angle)
@@ -220,8 +215,13 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
     return false;
   }
 
+  global_plan_.resize(transformed_plan.size());
+  for(unsigned int i = 0; i < transformed_plan.size(); ++i){
+    global_plan_[i] = transformed_plan[i];
+  }
+
   // Get the first point of the global plan as the initial goal
-  geometry_msgs::PoseStamped goal_pose = transformed_plan.back();
+  geometry_msgs::PoseStamped goal_pose = global_plan_.back();
   double yaw = getYaw(current_pose_);
 
   // Calculate the goal direction from the robot's current pose to the goal pose
@@ -234,6 +234,45 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
     cmd_vel.angular.z = 0.5;  // Rotate proportionally to the yaw error
   }
   rotate = false;
+
+  unsigned int start_mx, start_my, goal_mx, goal_my;
+  geometry_msgs::PoseStamped goal = global_plan_.back();
+
+  geometry_msgs::PoseStamped current_robot_pose;
+  costmap_ros_->getRobotPose(current_robot_pose);   
+  double start_wx = current_robot_pose.pose.position.x;
+  double start_wy = current_robot_pose.pose.position.y;
+  double goal_wx = goal.pose.position.x;
+  double goal_wy = goal.pose.position.y;
+
+  if (!costmap_->worldToMap(start_wx, start_wy, start_mx, start_my)){
+      ROS_WARN("Cannot convert world current coordinates to map coordinates");
+      }
+
+   if(!costmap_->worldToMap(goal_wx, goal_wy, goal_mx, goal_my)) {
+      ROS_WARN("Cannot convert world goal coordinates to map coordinates");
+     }
+  
+  // Perform Bresenham's line algorithm to check for obstacles along the straight path
+    std::vector<std::pair<int, int>> line_points = planner_->bresenhamLine(start_mx, start_my, goal_mx, goal_my);
+
+    for (const auto& point : line_points) {
+        unsigned int mx = point.first;
+        unsigned int my = point.second;
+
+        // Get cost from the costmap at each point
+        unsigned char cost = costmap_->getCost(mx, my);
+
+        // Check if there's a lethal obstacle
+        if (cost == costmap_2d::LETHAL_OBSTACLE) {
+            planner_->obstacleFound(true);
+            break;
+        }
+        if(cost == costmap_2d::FREE_SPACE){
+          planner_->obstacleFound(false);
+          break;
+        }
+    }
   // Once the robot is oriented correctly, proceed with normal DWA planning
   const unsigned char* charmap = costmap_->getCharMap();
 
@@ -252,19 +291,19 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
   }
 
   std::vector<std::vector<double>> reference_path;
-  for (const auto& pose : transformed_plan)
+  for (const auto& pose : global_plan_)
   {
     double x = pose.pose.position.x;
     double y = pose.pose.position.y;
     double theta = tf2::getYaw(pose.pose.orientation);
     reference_path.push_back({x, y, theta});
   }
-  publishGlobalPlan(transformed_plan);
+  publishGlobalPlan(global_plan_);
 
   double dwa_cmd_vel_x, dwa_cmd_vel_theta;
   bool success = planner_->computeVelocityCommands(robot_vel_x, robot_vel_theta, robot_pose_x, robot_pose_y, robot_pose_theta,
                                                    reference_path, charmap_, size_x_, size_y_,
-                                                   resolution, origin_x, origin_y, dwa_cmd_vel_x, dwa_cmd_vel_theta, transformed_plan);
+                                                   resolution, origin_x, origin_y, dwa_cmd_vel_x, dwa_cmd_vel_theta);
 
   if (!success)
   {
@@ -284,10 +323,10 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
 
     geometry_msgs::PoseStamped robot_pose;
     costmap_ros_->getRobotPose(robot_pose);
-    geometry_msgs::PoseStamped global_plan_ = transformed_plan.back();
+    geometry_msgs::PoseStamped global_ = global_plan_.back();
 
-    double dx = robot_pose.pose.position.x - global_plan_.pose.position.x;
-    double dy = robot_pose.pose.position.y - global_plan_.pose.position.y;
+    double dx = robot_pose.pose.position.x - global_.pose.position.x;
+    double dy = robot_pose.pose.position.y - global_.pose.position.y;
 
     if (hypot(dx, dy) <= xy_goal_tolerance_) {
       cmd_vel.linear.x = 0.0;
