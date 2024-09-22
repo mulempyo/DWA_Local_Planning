@@ -16,7 +16,7 @@ class DWAPlanner {
 public:
   DWAPlanner(base_local_planner::CostmapModel* costmap_model,
              const std::vector<geometry_msgs::Point>& footprint_spec, double inscribed_radius,
-             double circumscribed_radius, ros::NodeHandle& nh, costmap_2d::Costmap2DROS* costmap_ros);
+             double circumscribed_radius, ros::NodeHandle& nh);
 
   ~DWAPlanner();
 
@@ -44,7 +44,11 @@ public:
                                const double& robot_pose_x, const double& robot_pose_y, const double& robot_pose_theta,
                                const std::vector<std::vector<double>>& global_plan, unsigned char const* const* costmap,
                                int size_x, int size_y, double resolution, double origin_x, double origin_y,
-                               double& cmd_vel_x, double& cmd_vel_theta, const std::vector<geometry_msgs::PoseStamped> transformed_plan);
+                               double& cmd_vel_x, double& cmd_vel_theta);
+
+  std::vector<std::pair<int, int>> bresenhamLine(int x0, int y0, int x1, int y1);
+  bool obstacleFound(bool found);
+  bool obstacleDetected() const;                             
 
 private:
   /**
@@ -65,8 +69,8 @@ private:
    */
   void generateTrajectory(const double& robot_vel_x, const double& robot_vel_theta,
                                     const double& robot_pose_x, const double& robot_pose_y, const double& robot_pose_theta,
-                                    const double& sample_vel_x, const double& sample_vel_theta, std::vector<std::vector<double>>& traj, 
-                                    const std::vector<geometry_msgs::PoseStamped> global_plan); 
+                                    const double& sample_vel_x, const double& sample_vel_theta, std::vector<std::vector<double>>& traj); 
+                                    
 
   void worldToMap(const double wx, const double wy, int& mx, int& my, const double resolution, const double origin_x, const double origin_y);
 
@@ -80,9 +84,8 @@ private:
    */
   double computeNewLinearVelocities(const double& target_vel, const double& current_vel, const double& acc_lim);
 
-  double computeNewAngularVelocities(const double& target_vel, const double& current_vel, const double& acc_lim, 
-                                        unsigned int start_mx, unsigned int start_my, unsigned int goal_mx, unsigned int goal_my);
-
+  double computeNewAngularVelocities(const double& target_vel, const double& current_vel, const double& acc_lim);
+                                        
   /**
    * @brief Samples potential velocities for the robot to explore.
    */
@@ -97,7 +100,7 @@ private:
    * @brief Publishes candidate paths for visualization.
    */
   void publishCandidatePaths(const std::vector<std::vector<std::vector<double>>>& path_all);
-  std::vector<std::pair<int, int>> bresenhamLine(int x0, int y0, int x1, int y1);
+  
 
   // Parameters
   double max_vel_x_;
@@ -114,6 +117,7 @@ private:
   double path_distance_bias_;
   double goal_distance_bias_;
   double occdist_scale_;
+  bool obstacle_found;
   std::string map_frame_;
 
   base_local_planner::CostmapModel* costmap_model_ = nullptr;
@@ -123,8 +127,6 @@ private:
 
   // ROS
   ros::Publisher candidate_paths_pub_;
-  costmap_2d::Costmap2D* costmap_;
-  costmap_2d::Costmap2DROS* costmap_ros_;
 };
 
 }  // namespace dwa_planner

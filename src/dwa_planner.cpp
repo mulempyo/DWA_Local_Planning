@@ -6,17 +6,13 @@ namespace dwa_planner_ros {
 
 DWAPlanner::DWAPlanner(base_local_planner::CostmapModel* costmap_model,
                        const std::vector<geometry_msgs::Point>& footprint_spec, double inscribed_radius,
-                       double circumscribed_radius, ros::NodeHandle& nh, costmap_2d::Costmap2DROS* costmap_ros)
+                       double circumscribed_radius, ros::NodeHandle& nh)
   : costmap_model_(costmap_model)
   , footprint_spec_(footprint_spec)
   , inscribed_radius_(inscribed_radius)
   , circumscribed_radius_(circumscribed_radius)
-  , costmap_ros_(costmap_ros)
 {
   candidate_paths_pub_ = nh.advertise<nav_msgs::Path>("dwa_candidate_paths", 1);
-  
-  costmap_ = costmap_ros_->getCostmap();
-
   nh.param("map_frame", map_frame_, std::string("map"));
   nh.param("max_vel_x", max_vel_x_, 0.55);
   nh.param("min_vel_x", min_vel_x_, 0.0);
@@ -39,7 +35,7 @@ bool DWAPlanner::computeVelocityCommands(const double& robot_vel_x, const double
                                          const double& robot_pose_x, const double& robot_pose_y, const double& robot_pose_theta,
                                          const std::vector<std::vector<double>>& global_plan, unsigned char const* const* costmap,
                                          int size_x, int size_y, double resolution, double origin_x, double origin_y,
-                                         double& cmd_vel_x, double& cmd_vel_theta, const std::vector<geometry_msgs::PoseStamped> transformed_plan)
+                                         double& cmd_vel_x, double& cmd_vel_theta)
 {
   std::vector<std::pair<double, double>> sample_vels;
   if (!samplePotentialVels(robot_vel_x, robot_vel_theta, sample_vels)){
@@ -53,7 +49,7 @@ bool DWAPlanner::computeVelocityCommands(const double& robot_vel_x, const double
 
   while (it != sample_vels.end()) {
     std::vector<std::vector<double>> traj;
-    generateTrajectory(robot_vel_x, robot_vel_theta, robot_pose_x, robot_pose_y, robot_pose_theta, it->first, it->second, traj, transformed_plan);
+    generateTrajectory(robot_vel_x, robot_vel_theta, robot_pose_x, robot_pose_y, robot_pose_theta, it->first, it->second, traj);
 
     if (!isPathFeasible(traj)) {
       ++it;
@@ -96,7 +92,9 @@ double DWAPlanner::scoreTrajectory(const std::vector<std::vector<double>>& traj,
   int occupy = 0;
   for (auto it = traj.begin(); it != traj.end(); ++it) {
     worldToMap(it->at(0), it->at(1), mx, my, resolution, origin_x, origin_y);
+    if(mx >= 0 && my >= 0 && mx < size_x && my < size_y){
     occupy = std::max(costmap[mx][my] - 0, occupy);
+    }
   }
 
   const std::vector<double>& end_pose = traj.back();
@@ -113,28 +111,17 @@ double DWAPlanner::scoreTrajectory(const std::vector<std::vector<double>>& traj,
 
 void DWAPlanner::generateTrajectory(const double& robot_vel_x, const double& robot_vel_theta,
                                     const double& robot_pose_x, const double& robot_pose_y, const double& robot_pose_theta,
-                                    const double& sample_vel_x, const double& sample_vel_theta, std::vector<std::vector<double>>& traj, 
-                                    const std::vector<geometry_msgs::PoseStamped>transformed_plan)
+                                    const double& sample_vel_x, const double& sample_vel_theta, std::vector<std::vector<double>>& traj)
 {
   double pose_x = robot_pose_x;
   double pose_y = robot_pose_y;
   double pose_theta = robot_pose_theta;
   double vel_x = robot_vel_x;
   double vel_theta = robot_vel_theta;
-  unsigned int start_mx, start_my, goal_mx, goal_my;
- 
-  geometry_msgs::PoseStamped goal = transformed_plan.back();  
-  double goal_wx = goal.pose.position.x;
-  double goal_wy = goal.pose.position.y;
 
-  if (!costmap_->worldToMap(pose_x, pose_y, start_mx, start_my) ||
-      !costmap_->worldToMap(goal_wx, goal_wy, goal_mx, goal_my)) {
-      ROS_WARN("Cannot convert world coordinates to map coordinates");
-      }
-  
   for (int i = 0; i < sim_time_samples_; ++i) {
     vel_x = computeNewLinearVelocities(sample_vel_x, vel_x, acc_lim_x_);
-    vel_theta = computeNewAngularVelocities(sample_vel_theta, vel_theta, acc_lim_theta_, start_mx, start_my, goal_mx, goal_my);
+    vel_theta = computeNewAngularVelocities(sample_vel_theta, vel_theta, acc_lim_theta_);
     computeNewPose(pose_x, pose_y, pose_theta, vel_x, vel_theta);
     traj.push_back({pose_x, pose_y, pose_theta});
   }
@@ -162,31 +149,9 @@ double DWAPlanner::computeNewLinearVelocities(const double& target_vel, const do
   }
 }
 
-double DWAPlanner::computeNewAngularVelocities(const double& target_vel, const double& current_vel, const double& acc_lim, 
-                                        unsigned int start_mx, unsigned int start_my, unsigned int goal_mx, unsigned int goal_my)
+double DWAPlanner::computeNewAngularVelocities(const double& target_vel, const double& current_vel, const double& acc_lim)
 {
-    // Perform Bresenham's line algorithm to check for obstacles along the straight path
-    std::vector<std::pair<int, int>> line_points = bresenhamLine(start_mx, start_my, goal_mx, goal_my);
-
-    bool obstacle_found = false;
-    for (const auto& point : line_points) {
-        unsigned int mx = point.first;
-        unsigned int my = point.second;
-
-        // Get cost from the costmap at each point
-        unsigned char cost = costmap_->getCost(mx, my);
-
-        // Check if there's a lethal obstacle
-        if (cost == costmap_2d::LETHAL_OBSTACLE) {
-            obstacle_found = true;
-            break;
-        }
-        if(cost == costmap_2d::FREE_SPACE){
-          obstacle_found = false;
-        }
-    }
-
-    if (obstacle_found) {
+    if (obstacleDetected()) {
         if(target_vel < current_vel){
          return std::max(target_vel, current_vel - acc_lim * control_period_);
         }else{
@@ -283,5 +248,13 @@ std::vector<std::pair<int, int>> DWAPlanner::bresenhamLine(int x0, int y0, int x
         }
         return points;
     }
+    
+bool DWAPlanner::obstacleFound(bool found){
+     obstacle_found = found;
+}
+
+bool DWAPlanner::obstacleDetected() const {
+    return obstacle_found;
+}
 
 }
