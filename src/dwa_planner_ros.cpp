@@ -55,7 +55,7 @@ void DWAPlannerROS::allocateMemory()
 
 void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d::Costmap2DROS* costmap_ros)
 {
-
+  // if you use rolling_window, width and height have to be wide range
   // check if the plugin is already initialized
   if (!initialized_)
   { 
