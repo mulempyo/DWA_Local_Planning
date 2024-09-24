@@ -229,7 +229,7 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
   double yaw_error = angles::shortest_angular_distance(yaw,target_yaw);
   
   // If the yaw error is significant, perform a rotational correction
-  if (fabs(yaw_error) > 0.1 && rotate == true) {  // Threshold to decide when to rotate in place (0.1 rad)
+  if (fabs(yaw_error) > 0.01 && rotate == true) {  // Threshold to decide when to rotate in place (0.1 rad)
     cmd_vel.linear.x = 0.0;
     cmd_vel.angular.z = 0.5;  // Rotate proportionally to the yaw error
   }
