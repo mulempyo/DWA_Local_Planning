@@ -14,11 +14,11 @@ DWAPlanner::DWAPlanner(base_local_planner::CostmapModel* costmap_model,
 {
   candidate_paths_pub_ = nh.advertise<nav_msgs::Path>("dwa_candidate_paths", 1);
   nh.param("map_frame", map_frame_, std::string("map"));
-  nh.param("max_vel_x", max_vel_x_, 0.55);
+  nh.param("max_vel_x", max_vel_x_, 0.35);
   nh.param("min_vel_x", min_vel_x_, 0.0);
   nh.param("max_vel_theta", max_vel_theta_, 2.5);
   nh.param("min_vel_theta", min_vel_theta_, -2.5);
-  nh.param("acc_lim_x", acc_lim_x_, 0.25);
+  nh.param("acc_lim_x", acc_lim_x_, 0.15);
   nh.param("acc_lim_theta", acc_lim_theta_, 1.2);
   nh.param("control_period", control_period_, 0.2);
   nh.param("path_distance_bias", path_distance_bias_, 32.0);
