@@ -175,7 +175,6 @@ bool DWAPlannerROS::setPlan(const std::vector<geometry_msgs::PoseStamped>& plan)
 
   goal_reached_ = false;
   rotate = true;
-
   ROS_WARN("start Plan");
   return planner_util_.setPlan(plan);
 }
@@ -220,7 +219,6 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
     global_plan_[i] = transformed_plan[i];
   }
 
-  // Get the first point of the global plan as the initial goal
   geometry_msgs::PoseStamped goal_pose = global_plan_.back();
   double yaw = getYaw(current_pose_);
 
@@ -228,12 +226,18 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
   double target_yaw = atan2(goal_pose.pose.position.y - robot_pose_y, goal_pose.pose.position.x - robot_pose_x);
   double yaw_error = angles::shortest_angular_distance(yaw,target_yaw);
   
-  // If the yaw error is significant, perform a rotational correction
-  if (fabs(yaw_error) > 0.01 && rotate == true) {  // Threshold to decide when to rotate in place (0.1 rad)
-    cmd_vel.linear.x = 0.0;
-    cmd_vel.angular.z = 0.5;  // Rotate proportionally to the yaw error
+  if (rotate) { 
+    if(fabs(yaw_error) > 0.02) {
+      cmd_vel.linear.x = 0.0;
+      cmd_vel.angular.z = 0.5;  
+      ROS_WARN("Rotating to correct yaw, yaw_error: %f", fabs(yaw_error));
+      return true; 
+    } else {
+      ROS_WARN("Yaw aligned, proceeding to move.");
+      rotate = false;  
+    }
   }
-  rotate = false;
+
 
   unsigned int start_mx, start_my, goal_mx, goal_my;
   geometry_msgs::PoseStamped goal = global_plan_.back();
@@ -332,11 +336,13 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
       cmd_vel.linear.x = 0.0;
       cmd_vel.angular.z = 0.0;
       goal_reached_ = true;
+      rotate = true;
       ROS_INFO("Goal reached.");
     }
       return true;
    }
   }
+
 }
 
 bool DWAPlannerROS::isGoalReached()
