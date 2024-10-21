@@ -175,7 +175,6 @@ bool DWAPlannerROS::setPlan(const std::vector<geometry_msgs::PoseStamped>& plan)
 
   goal_reached_ = false;
   rotate = true;
-
   ROS_WARN("start Plan");
   return planner_util_.setPlan(plan);
 }
@@ -236,12 +235,10 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
       ROS_WARN("Rotating to correct yaw, yaw_error: %f", fabs(yaw_error));
       return true; 
     } else {
-      // Yaw aligned, stop rotating and move to next phase (move forward)
       ROS_WARN("Yaw aligned, proceeding to move.");
       rotate = false;  
     }
   }
-
   // Now proceed with normal DWA planning
   unsigned int start_mx, start_my, goal_mx, goal_my;
   geometry_msgs::PoseStamped goal = global_plan_.back();
@@ -328,7 +325,7 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
     }else{
       cmd_vel.linear.x = dwa_cmd_vel_x;
       cmd_vel.angular.z = dwa_cmd_vel_theta;
-    
+
       // Check if goal is reached
       geometry_msgs::PoseStamped robot_pose;
       costmap_ros_->getRobotPose(robot_pose);
@@ -347,6 +344,7 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
       return true;
    }
   }
+
 }
 
 
