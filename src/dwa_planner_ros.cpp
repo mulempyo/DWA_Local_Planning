@@ -219,17 +219,30 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
     global_plan_[i] = transformed_plan[i];
   }
 
-  geometry_msgs::PoseStamped goal_pose = global_plan_.back();
-  double yaw = getYaw(current_pose_);
+  geometry_msgs::PoseStamped lookahead_pose = global_plan_.back(); 
+  for (const auto& pose : global_plan_) {
+    double dx = pose.pose.position.x - robot_pose_x;
+    double dy = pose.pose.position.y - robot_pose_y;
+    double distance = hypot(dx, dy);
+    if (distance == 0.1) { 
+      lookahead_pose = pose;
+      break;
+    }
+  }
 
-  // Calculate the goal direction from the robot's current pose to the goal pose
-  double target_yaw = atan2(goal_pose.pose.position.y - robot_pose_y, goal_pose.pose.position.x - robot_pose_x);
-  double yaw_error = angles::shortest_angular_distance(yaw,target_yaw);
-  
-  if (rotate) { 
-    if(fabs(yaw_error) > 0.02) {
+  geometry_msgs::PoseStamped goal_pose = global_plan_.back();
+  double robot_yaw = tf2::getYaw(current_pose_.pose.orientation);
+  double target_yaw = atan2(lookahead_pose.pose.position.y - robot_pose_y, lookahead_pose.pose.position.x - robot_pose_x);
+
+  double yaw_error = angles::shortest_angular_distance(robot_yaw, target_yaw);
+
+  // If the robot needs to rotate, handle it
+  if (rotate) {
+    // Check if the yaw error is within the acceptable threshold to stop rotating
+    if (fabs(yaw_error) > 0.2) {
+      // Continue rotating
       cmd_vel.linear.x = 0.0;
-      cmd_vel.angular.z = 0.5;  
+      cmd_vel.angular.z = 0.3;  // Rotate proportionally to the yaw error
       ROS_WARN("Rotating to correct yaw, yaw_error: %f", fabs(yaw_error));
       return true; 
     } else {
@@ -237,8 +250,7 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
       rotate = false;  
     }
   }
-
-
+  // Now proceed with normal DWA planning
   unsigned int start_mx, start_my, goal_mx, goal_my;
   geometry_msgs::PoseStamped goal = global_plan_.back();
 
@@ -251,33 +263,34 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
 
   if (!costmap_->worldToMap(start_wx, start_wy, start_mx, start_my)){
       ROS_WARN("Cannot convert world current coordinates to map coordinates");
-      }
+  }
 
-   if(!costmap_->worldToMap(goal_wx, goal_wy, goal_mx, goal_my)) {
+  if(!costmap_->worldToMap(goal_wx, goal_wy, goal_mx, goal_my)) {
       ROS_WARN("Cannot convert world goal coordinates to map coordinates");
-     }
+  }
   
   // Perform Bresenham's line algorithm to check for obstacles along the straight path
-    std::vector<std::pair<int, int>> line_points = planner_->bresenhamLine(start_mx, start_my, goal_mx, goal_my);
+  std::vector<std::pair<int, int>> line_points = planner_->bresenhamLine(start_mx, start_my, goal_mx, goal_my);
 
-    for (const auto& point : line_points) {
-        unsigned int mx = point.first;
-        unsigned int my = point.second;
+  for (const auto& point : line_points) {
+      unsigned int mx = point.first;
+      unsigned int my = point.second;
 
-        // Get cost from the costmap at each point
-        unsigned char cost = costmap_->getCost(mx, my);
+      // Get cost from the costmap at each point
+      unsigned char cost = costmap_->getCost(mx, my);
 
-        // Check if there's a lethal obstacle
-        if (cost == costmap_2d::LETHAL_OBSTACLE) {
-            planner_->obstacleFound(true);
-            break;
-        }
-        if(cost == costmap_2d::FREE_SPACE){
-          planner_->obstacleFound(false);
+      // Check if there's a lethal obstacle
+      if (cost == costmap_2d::LETHAL_OBSTACLE) {
+          planner_->obstacleFound(true);
           break;
-        }
-    }
-  // Once the robot is oriented correctly, proceed with normal DWA planning
+      }
+      if(cost == costmap_2d::FREE_SPACE){
+        planner_->obstacleFound(false);
+        break;
+      }
+  }
+
+  // Proceed with normal DWA planning
   const unsigned char* charmap = costmap_->getCharMap();
 
   if (charmap_ == NULL || size_x_ != size_x || size_y_ != size_y)
@@ -323,27 +336,28 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
     }else{
       cmd_vel.linear.x = dwa_cmd_vel_x;
       cmd_vel.angular.z = dwa_cmd_vel_theta;
-    
 
-    geometry_msgs::PoseStamped robot_pose;
-    costmap_ros_->getRobotPose(robot_pose);
-    geometry_msgs::PoseStamped global_ = global_plan_.back();
+      // Check if goal is reached
+      geometry_msgs::PoseStamped robot_pose;
+      costmap_ros_->getRobotPose(robot_pose);
+      geometry_msgs::PoseStamped global_ = global_plan_.back();
 
-    double dx = robot_pose.pose.position.x - global_.pose.position.x;
-    double dy = robot_pose.pose.position.y - global_.pose.position.y;
+      double dx = robot_pose.pose.position.x - global_.pose.position.x;
+      double dy = robot_pose.pose.position.y - global_.pose.position.y;
 
-    if (hypot(dx, dy) <= xy_goal_tolerance_) {
-      cmd_vel.linear.x = 0.0;
-      cmd_vel.angular.z = 0.0;
-      goal_reached_ = true;
-      rotate = true;
-      ROS_INFO("Goal reached.");
-    }
+      if (hypot(dx, dy) <= xy_goal_tolerance_) {
+        cmd_vel.linear.x = 0.0;
+        cmd_vel.angular.z = 0.0;
+        goal_reached_ = true;
+        rotate = true;
+        ROS_INFO("Goal reached.");
+      }
       return true;
    }
   }
 
 }
+
 
 bool DWAPlannerROS::isGoalReached()
 {
