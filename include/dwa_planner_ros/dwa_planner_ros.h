@@ -8,6 +8,7 @@
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/Twist.h>
 #include <nav_msgs/Path.h>
+#include <nav_msgs/OccupancyGrid.h>
 #include <base_local_planner/odometry_helper_ros.h>
 #include <base_local_planner/local_planner_util.h>
 #include "dwa_planner_ros/dwa_planner.h"
@@ -31,6 +32,7 @@ public:
   void initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d::Costmap2DROS* costmap_ros);
 
   void laserCallback(const sensor_msgs::LaserScan& scan);
+  void costmapCallback(const nav_msgs::OccupancyGrid& grid);
   bool checkObstacle(const double range, const double robot_x, const double robot_y, const double robot_theta, const double scan_angle);
 
   /**
@@ -58,6 +60,7 @@ public:
 
   std::vector<geometry_msgs::PoseStamped> global_plan_;
   ros::Subscriber laser_sub_;
+  ros::Subscriber costmap_sub_;
 
 private:
   /**

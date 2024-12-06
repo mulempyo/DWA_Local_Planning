@@ -3,6 +3,7 @@
 #include <angles/angles.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include "dwa_planner_ros/dwa_planner_ros.h"
+#include <nav_msgs/OccupancyGrid.h>
 #include <sensor_msgs/LaserScan.h>
 
 // register this planner as a BaseLocalPlanner plugin
@@ -14,7 +15,7 @@ DWAPlannerROS::DWAPlannerROS()
   : initialized_(false), size_x_(0), size_y_(0), goal_reached_(false)
 {
 ros::NodeHandle nh;
-laser_sub_ = nh.subscribe("/scan", 1, &DWAPlannerROS::laserCallback, this);
+laser_sub_ = nh.subscribe("scan", 1, &DWAPlannerROS::laserCallback, this);
 }
 
 DWAPlannerROS::~DWAPlannerROS()
@@ -99,6 +100,7 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
 
     global_plan_pub_ = private_nh.advertise<nav_msgs::Path>("dwa_global_plan", 1);
     planner_util_.initialize(tf_, costmap_, global_frame_);
+ 
     // set initialized flag
     initialized_ = true;
 
@@ -110,6 +112,14 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
   }
 }
 
+void DWAPlannerROS::costmapCallback(const nav_msgs::OccupancyGrid& grid){
+   ROS_WARN("costmapCallback");
+   //resolution = grid.info.resolution;
+   //size_x = grid.info.width;
+   //size_y = grid.info.height;
+   //origin_x = grid.info.origin.position.x;
+   //origin_y = grid.info.origin.position.y;
+}
 
 void DWAPlannerROS::laserCallback(const sensor_msgs::LaserScan& scan)
 {
