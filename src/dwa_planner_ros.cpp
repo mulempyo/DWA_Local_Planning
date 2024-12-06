@@ -3,6 +3,7 @@
 #include <angles/angles.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include "dwa_planner_ros/dwa_planner_ros.h"
+#include <nav_msgs/OccupancyGrid.h>
 #include <sensor_msgs/LaserScan.h>
 
 // register this planner as a BaseLocalPlanner plugin
@@ -14,7 +15,7 @@ DWAPlannerROS::DWAPlannerROS()
   : initialized_(false), size_x_(0), size_y_(0), goal_reached_(false)
 {
 ros::NodeHandle nh;
-laser_sub_ = nh.subscribe("/scan", 1, &DWAPlannerROS::laserCallback, this);
+laser_sub_ = nh.subscribe("scan", 1, &DWAPlannerROS::laserCallback, this);
 }
 
 DWAPlannerROS::~DWAPlannerROS()
@@ -99,6 +100,7 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
 
     global_plan_pub_ = private_nh.advertise<nav_msgs::Path>("dwa_global_plan", 1);
     planner_util_.initialize(tf_, costmap_, global_frame_);
+ 
     // set initialized flag
     initialized_ = true;
 
@@ -110,6 +112,14 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
   }
 }
 
+void DWAPlannerROS::costmapCallback(const nav_msgs::OccupancyGrid& grid){
+   ROS_WARN("costmapCallback");
+   //resolution = grid.info.resolution;
+   //size_x = grid.info.width;
+   //size_y = grid.info.height;
+   //origin_x = grid.info.origin.position.x;
+   //origin_y = grid.info.origin.position.y;
+}
 
 void DWAPlannerROS::laserCallback(const sensor_msgs::LaserScan& scan)
 {
@@ -175,7 +185,6 @@ bool DWAPlannerROS::setPlan(const std::vector<geometry_msgs::PoseStamped>& plan)
 
   goal_reached_ = false;
   rotate = true;
-
   ROS_WARN("start Plan");
   return planner_util_.setPlan(plan);
 }
@@ -220,9 +229,22 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
     global_plan_[i] = transformed_plan[i];
   }
 
+  geometry_msgs::PoseStamped lookahead_pose = global_plan_.back(); 
+  for (const auto& pose : global_plan_) {
+    double dx = pose.pose.position.x - robot_pose_x;
+    double dy = pose.pose.position.y - robot_pose_y;
+    double distance = hypot(dx, dy);
+    if (distance == 0.1) { 
+      lookahead_pose = pose;
+      break;
+    }
+  }
+
   geometry_msgs::PoseStamped goal_pose = global_plan_.back();
   double robot_yaw = tf2::getYaw(current_pose_.pose.orientation);
-  double target_yaw = atan2(goal_pose.pose.position.y - robot_pose_y, goal_pose.pose.position.x - robot_pose_x);
+
+  double target_yaw = atan2(lookahead_pose.pose.position.y - robot_pose_y, lookahead_pose.pose.position.x - robot_pose_x);
+
 
   double yaw_error = angles::shortest_angular_distance(robot_yaw, target_yaw);
 
@@ -236,12 +258,10 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
       ROS_WARN("Rotating to correct yaw, yaw_error: %f", fabs(yaw_error));
       return true; 
     } else {
-      // Yaw aligned, stop rotating and move to next phase (move forward)
       ROS_WARN("Yaw aligned, proceeding to move.");
       rotate = false;  
     }
   }
-
   // Now proceed with normal DWA planning
   unsigned int start_mx, start_my, goal_mx, goal_my;
   geometry_msgs::PoseStamped goal = global_plan_.back();
@@ -328,7 +348,7 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
     }else{
       cmd_vel.linear.x = dwa_cmd_vel_x;
       cmd_vel.angular.z = dwa_cmd_vel_theta;
-    
+
       // Check if goal is reached
       geometry_msgs::PoseStamped robot_pose;
       costmap_ros_->getRobotPose(robot_pose);
@@ -347,6 +367,7 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
       return true;
    }
   }
+
 }
 
 
