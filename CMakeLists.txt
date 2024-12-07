@@ -16,6 +16,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   tf
   tf2
+  detect_object
 )
 
 # Eigen3
@@ -33,6 +34,7 @@ catkin_package(
     roscpp 
     tf 
     tf2
+    detect_object
 )
 
 include_directories(
