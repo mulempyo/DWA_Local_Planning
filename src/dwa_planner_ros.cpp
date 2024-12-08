@@ -2,6 +2,8 @@
 #include <pluginlib/class_list_macros.h>
 #include <angles/angles.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include "tf2_ros/buffer.h"
+#include "tf2_ros/transform_listener.h"
 #include "dwa_planner_ros/dwa_planner_ros.h"
 #include <nav_msgs/OccupancyGrid.h>
 #include <sensor_msgs/LaserScan.h>
@@ -16,6 +18,7 @@ DWAPlannerROS::DWAPlannerROS()
 {
 ros::NodeHandle nh;
 laser_sub_ = nh.subscribe("scan", 1, &DWAPlannerROS::laserCallback, this);
+sub_ = nh.subscribe("scan", 10, &DWAPlannerROS::laserReceived, this);
 }
 
 DWAPlannerROS::~DWAPlannerROS()
@@ -110,6 +113,62 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
   {
     ROS_WARN("dwa_local_planner has already been initialized, doing nothing.");
   }
+}
+
+void DWAPlannerROS::laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan_){
+ 
+   if (!laser_scan_) {
+      ROS_WARN("laser_scan_ is null");
+    }
+
+    if (!costmap_) {
+      ROS_WARN("costmap is null");
+    }
+
+    std::vector<geometry_msgs::Point> obstacles;
+    double angle = laser_scan_->angle_min;
+    
+    for (const auto& range : laser_scan_->ranges) {
+        if (range >= laser_scan_->range_min && range <= laser_scan_->range_max) {
+            geometry_msgs::Point obstacle;
+            obstacle.x = range * std::cos(angle);
+            obstacle.y = range * std::sin(angle);
+            obstacle.z = 0.0;
+            obstacles.push_back(obstacle);
+        }
+        angle += laser_scan_->angle_increment;
+    }
+
+    unsigned int sizeX = costmap_->getSizeInCellsX();
+    unsigned int sizeY = costmap_->getSizeInCellsY();
+ 
+    for (const auto& obs : obstacles) {
+        unsigned int mx, my;
+        if (costmap_->worldToMap(obs.x, obs.y, mx, my)) {
+            costmap_->setCost(mx, my, costmap_2d::LETHAL_OBSTACLE);
+        }
+    }
+ 
+    for (unsigned int i = 0; i < sizeX; ++i) {
+        for (unsigned int j = 0; j < sizeY; ++j) {
+            if (costmap_->getCost(i, j) == costmap_2d::LETHAL_OBSTACLE) {
+                bool still_obstacle = false;
+                for (const auto& obs : obstacles) {
+                    unsigned int mx, my;
+                    if (costmap_->worldToMap(obs.x, obs.y, mx, my) && mx == i && my == j) {
+                        still_obstacle = true;
+                        break;
+                    }
+                }
+                if (!still_obstacle) {
+                    costmap_->setCost(i, j, costmap_2d::FREE_SPACE);
+                }
+            }
+        }
+    }
+   //ROS_WARN("success costmap update in dwa");
+   //costmap_ = costmap;
+  
 }
 
 void DWAPlannerROS::laserCallback(const sensor_msgs::LaserScan& scan)
