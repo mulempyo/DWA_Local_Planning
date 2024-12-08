@@ -32,7 +32,7 @@ public:
   void initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d::Costmap2DROS* costmap_ros);
 
   void laserCallback(const sensor_msgs::LaserScan& scan);
-  void costmapCallback(const nav_msgs::OccupancyGrid& grid);
+ 
   bool checkObstacle(const double range, const double robot_x, const double robot_y, const double robot_theta, const double scan_angle);
 
   /**
@@ -60,7 +60,7 @@ public:
 
   std::vector<geometry_msgs::PoseStamped> global_plan_;
   ros::Subscriber laser_sub_;
-  ros::Subscriber costmap_sub_;
+  
 
 private:
   /**

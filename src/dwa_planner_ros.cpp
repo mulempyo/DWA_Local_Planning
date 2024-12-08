@@ -112,15 +112,6 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
   }
 }
 
-void DWAPlannerROS::costmapCallback(const nav_msgs::OccupancyGrid& grid){
-   ROS_WARN("costmapCallback");
-   //resolution = grid.info.resolution;
-   //size_x = grid.info.width;
-   //size_y = grid.info.height;
-   //origin_x = grid.info.origin.position.x;
-   //origin_y = grid.info.origin.position.y;
-}
-
 void DWAPlannerROS::laserCallback(const sensor_msgs::LaserScan& scan)
 {
     dynamic_obstacle_detected = false;
