@@ -177,13 +177,6 @@ void DWAPlannerROS::laserCallback(const sensor_msgs::LaserScan& scan)
         allocateMemory();
     }
 
-    // 현재 Costmap을 charmap_에 복사
-    for (unsigned int j = 0; j < size_y_; j++)
-    {
-        for (unsigned int i = 0; i < size_x_; i++)
-            charmap_[i][j] = costmap_->getCost(i, j);
-    }
-
     // 새로운 장애물 설정
     for (const auto& obs : obstacles) {
         unsigned int mx, my;
@@ -193,9 +186,9 @@ void DWAPlannerROS::laserCallback(const sensor_msgs::LaserScan& scan)
     }
 
     // 기존 장애물 삭제 로직 추가 (필요시)
-    for (unsigned int i = 0; i < size_x_; ++i) {
-        for (unsigned int j = 0; j < size_y_; ++j) {
-            if (charmap_[i][j] == costmap_2d::LETHAL_OBSTACLE) {
+    for (unsigned int i = 0; i < size_x; ++i) {
+        for (unsigned int j = 0; j < size_y; ++j) {
+            if (costmap_->getCost(i, j) == costmap_2d::LETHAL_OBSTACLE) {
                 bool still_obstacle = false;
                 for (const auto& obs : obstacles) {
                     unsigned int mx, my;
@@ -205,7 +198,7 @@ void DWAPlannerROS::laserCallback(const sensor_msgs::LaserScan& scan)
                     }
                 }
                 if (!still_obstacle) {
-                    charmap_[i][j] = costmap_2d::FREE_SPACE;
+                    costmap_->setCost(i, j, costmap_2d::FREE_SPACE);
                 }
             }
         }
