@@ -23,7 +23,7 @@ find_package(Eigen3 REQUIRED)
 
 catkin_package(
   INCLUDE_DIRS include
-  LIBRARIES dwa_planner
+  LIBRARIES dwa_planner_ros
   CATKIN_DEPENDS 
     base_local_planner 
     costmap_2d
@@ -43,3 +43,4 @@ include_directories(
 
 add_library(${PROJECT_NAME} src/dwa_planner_ros.cpp src/dwa_planner.cpp)
 target_link_libraries(${PROJECT_NAME} ${catkin_LIBRARIES})
+
