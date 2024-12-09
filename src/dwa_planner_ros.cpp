@@ -283,20 +283,21 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
 
     geometry_msgs::PoseStamped lookahead_pose = global_plan_.back(); 
     for (const auto& pose : global_plan_) {
-        double dx = pose.pose.position.x - robot_pose_x;
-        double dy = pose.pose.position.y - robot_pose_y;
-        double distance = hypot(dx, dy);
-        if (distance <= 0.1) { // 수정: distance == 0.1을 distance <= 0.1로 변경
-            lookahead_pose = pose;
-            break;
-        }
+    double dx = pose.pose.position.x - robot_pose_x;
+    double dy = pose.pose.position.y - robot_pose_y;
+    double distance = hypot(dx, dy);
+    if (distance == 0.1) { 
+      lookahead_pose = pose;
+      break;
+     }
     }
 
     geometry_msgs::PoseStamped goal_pose = global_plan_.back();
     double robot_yaw = tf2::getYaw(current_pose_.pose.orientation);
 
-    double target_yaw = atan2(lookahead_pose.pose.position.y - robot_pose_y, lookahead_pose.pose.position.x - robot_pose_x);
-    double yaw_error = angles::shortest_angular_distance(robot_yaw, target_yaw);
+  // Calculate the goal direction from the robot's current pose to the goal pose
+    double target_yaw = atan2(lookahead_pose.pose.position.y - robot_pose_y, lookahead_pose.pose.position.x - robot_pose_x); 
+    double yaw_error = angles::shortest_angular_distance(robot_yaw,target_yaw);
 
     // If the robot needs to rotate, handle it
     if (rotate) {
