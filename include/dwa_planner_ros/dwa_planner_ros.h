@@ -13,6 +13,9 @@
 #include <base_local_planner/local_planner_util.h>
 #include "dwa_planner_ros/dwa_planner.h"
 #include <sensor_msgs/LaserScan.h>
+#include <std_msgs/Float64.h>
+#include <actionlib/client/simple_action_client.h>
+#include <move_base_msgs/MoveBaseAction.h>
 
 namespace dwa_planner_ros{
 
@@ -21,6 +24,9 @@ public:
 
   DWAPlannerROS();
   ~DWAPlannerROS();
+
+   typedef actionlib::SimpleActionClient<move_base_msgs::MoveBaseAction> MoveBaseClient;
+   std::shared_ptr<MoveBaseClient> ac;
 
   /**
    * @brief Initializes the DWAPlannerROS.
@@ -31,6 +37,8 @@ public:
    */
   void initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d::Costmap2DROS* costmap_ros);
 
+  void safeMode(MoveBaseClient& ac, const std::array<float, 7>& goal);
+  void personDetect(const std_msgs::Float64::ConstPtr& person);
   void laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan);
   void laserCallback(const sensor_msgs::LaserScan& scan);
  
@@ -62,6 +70,8 @@ public:
   std::vector<geometry_msgs::PoseStamped> global_plan_;
   ros::Subscriber laser_sub_;
   ros::Subscriber sub_;
+  ros::Subscriber person_sub_;
+  ros::Publisher safe_pub_;
   
 
 private:
@@ -88,10 +98,12 @@ private:
   bool rotate;
   bool goal_reached_;           ///< Whether the goal is reached or not.
   bool dynamic_obstacle_detected;
+  bool person_detect;
   int size_x_;                  ///< Size of the costmap in the x direction.
   int size_y_;                  ///< Size of the costmap in the y direction.
   int size_x;
   int size_y;
+  int stack;
   unsigned char** charmap_ = nullptr;      ///< The costmap data.
   costmap_2d::Costmap2DROS* costmap_ros_;
   costmap_2d::Costmap2DROS* update_costmap_ros_;  
@@ -123,10 +135,14 @@ private:
   double robot_inscribed_radius_;  ///< The inscribed radius of the robot.
   double robot_circumscribed_radius_;  ///< The circumscribed radius of the robot.
 
+  std::array<float,7> safe1;
+  std::array<float,7> safe2;
+
   geometry_msgs::PoseStamped current_pose_;  ///< The current pose of the robot.
 
   base_local_planner::OdometryHelperRos odom_helper_;  ///< Helper to get odometry data.
   base_local_planner::LocalPlannerUtil planner_util_;       ///< Utility to assist with planning.
+
 };
 
 }  // namespace dwa

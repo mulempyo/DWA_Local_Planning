@@ -9,6 +9,9 @@
 #include <nav_msgs/OccupancyGrid.h>
 #include <sensor_msgs/LaserScan.h>
 #include <memory>
+#include <std_msgs/Float64.h>
+#include <actionlib/client/simple_action_client.h>
+#include <move_base_msgs/MoveBaseAction.h>
 
 // register this planner as a BaseLocalPlanner plugin
 PLUGINLIB_EXPORT_CLASS(dwa_planner_ros::DWAPlannerROS, nav_core::BaseLocalPlanner)
@@ -20,6 +23,7 @@ DWAPlannerROS::DWAPlannerROS()
 {
     ros::NodeHandle nh;
     laser_sub_ = nh.subscribe("scan", 1, &DWAPlannerROS::laserCallback, this);
+    person_sub_ = nh.subscribe("person_probability", 10, &DWAPlannerROS::personDetect, this);
 }
 
 DWAPlannerROS::~DWAPlannerROS()
@@ -99,10 +103,14 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
                                   private_nh);
 
         global_plan_pub_ = private_nh.advertise<nav_msgs::Path>("dwa_global_plan", 1);
+        safe_pub_ = private_nh.advertise<move_base_msgs::MoveBaseGoal>("safe_mode", 10);
         planner_util_.initialize(tf_, costmap_, global_frame_);
 
         // 메모리 할당
         allocateMemory();
+
+        safe1 = {-0.063431f, -0.031137f, 0.0f, 0.0f, 0.0f, 0.19328f, 0.999903f};
+        safe2 = {4.273204f, 0.379562f, 0.0f, 0.0f, 0.0f, -0.998399f, 0.056565f};
 
         // 초기화 플래그 설정
         initialized_ = true;
@@ -113,6 +121,34 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
     {
         ROS_WARN("dwa_local_planner has already been initialized, doing nothing.");
     }
+}
+
+void DWAPlannerROS::safeMode(MoveBaseClient& ac, const std::array<float, 7>& goal){
+  move_base_msgs::MoveBaseGoal move_goal;
+
+    // 목표 지점의 헤더 설정
+    move_goal.target_pose.header.frame_id = "map";
+    move_goal.target_pose.header.stamp = ros::Time::now();
+
+    // 목표 지점의 위치 설정
+    move_goal.target_pose.pose.position.x = goal[0];
+    move_goal.target_pose.pose.position.y = goal[1];
+    move_goal.target_pose.pose.position.z = 0.0; 
+
+    // 목표 지점의 방향 설정
+    move_goal.target_pose.pose.orientation.z = goal[5];
+    move_goal.target_pose.pose.orientation.w = goal[6];
+
+    ROS_INFO("Sending Goal: [x: %f, y: %f, z: %f, w: %f]", goal[0], goal[1], goal[5], goal[6]);
+    ac.sendGoal(move_goal);
+}
+
+void DWAPlannerROS::personDetect(const std_msgs::Float64::ConstPtr& person){
+  if(person->data == 1.0){
+    person_detect = true;
+  }else{
+    person_detect = false;
+  }
 }
 
 void DWAPlannerROS::laserCallback(const sensor_msgs::LaserScan& scan)
@@ -249,7 +285,8 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
         ROS_ERROR("DWAPlannerROS has not been initialized, please call initialize() before using this planner");
         return false;
     }
-
+ 
+    stack = 0;
     // Get the current robot pose
     costmap_ros_->getRobotPose(current_pose_);
     double robot_pose_x = current_pose_.pose.position.x;
@@ -397,7 +434,7 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
     }
     else
     {
-        if(dynamic_obstacle_detected){
+        if(dynamic_obstacle_detected || person_detect){
             cmd_vel.linear.x = 0;
             cmd_vel.angular.z = 0;
         } else {
@@ -431,6 +468,40 @@ bool DWAPlannerROS::isGoalReached()
         ROS_ERROR("DWAPlannerROS has not been initialized, please call initialize() before using this planner");
         return false;
     }
+
+    if(goal_reached_){
+    stack += 1;
+    ROS_INFO("Goal reached. Stack is now: %d", stack);
+    }
+
+    geometry_msgs::PoseStamped current_robot;
+    costmap_ros_->getRobotPose(current_robot);
+
+    double straight_x1 = safe1[0] - current_robot.pose.position.x;
+    double straight_y1 = safe1[1] - current_robot.pose.position.y;
+    double distance1 = std::hypot(straight_x1, straight_y1);
+
+    double straight_x2 = safe2[0] - current_robot.pose.position.x;
+    double straight_y2 = safe2[1] - current_robot.pose.position.y;
+    double distance2 = std::hypot(straight_x2, straight_y2);
+
+    bool dis1 = false;
+    bool dis2 = false;
+
+    if(dis1 < dis2){
+      dis1 = true;
+    }else{
+      dis2 = true;
+    }
+
+    if(stack == 2 && dis1){
+      safeMode(*ac, safe1);
+    }
+
+    if(stack == 2 && dis2){
+      safeMode(*ac, safe2);
+    }
+
     return goal_reached_;
 }
 
@@ -452,4 +523,3 @@ void DWAPlannerROS::publishGlobalPlan(const std::vector<geometry_msgs::PoseStamp
 }
 
 } // namespace dwa_planner_ros
-
