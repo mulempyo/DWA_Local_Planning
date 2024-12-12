@@ -16,7 +16,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   tf
   tf2
-  detect_object
+  move_base
 )
 
 # Eigen3
@@ -34,7 +34,7 @@ catkin_package(
     roscpp 
     tf 
     tf2
-    detect_object
+    move_base
 )
 
 include_directories(
@@ -44,5 +44,4 @@ include_directories(
 )
 
 add_library(${PROJECT_NAME} src/dwa_planner_ros.cpp src/dwa_planner.cpp)
-target_link_libraries(${PROJECT_NAME} ${catkin_LIBRARIES})
-
+target_link_libraries(${PROJECT_NAME} ${catkin_LIBRARIES}) 
