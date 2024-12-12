@@ -44,5 +44,4 @@ include_directories(
 )
 
 add_library(${PROJECT_NAME} src/dwa_planner_ros.cpp src/dwa_planner.cpp)
-target_link_libraries(${PROJECT_NAME} ${catkin_LIBRARIES})
-
+target_link_libraries(${PROJECT_NAME} ${catkin_LIBRARIES}) 
