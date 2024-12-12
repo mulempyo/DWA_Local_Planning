@@ -108,6 +108,7 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
 
         // 메모리 할당
         allocateMemory();
+        ac = std::make_shared<MoveBaseClient>("move_base", true);
 
         safe1 = {-0.063431f, -0.031137f, 0.0f, 0.0f, 0.0f, 0.19328f, 0.999903f};
         safe2 = {4.273204f, 0.379562f, 0.0f, 0.0f, 0.0f, -0.998399f, 0.056565f};
@@ -123,24 +124,21 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
     }
 }
 
-void DWAPlannerROS::safeMode(MoveBaseClient& ac, const std::array<float, 7>& goal){
+void DWAPlannerROS::safeMode(std::array<float, 7>& goal){
   move_base_msgs::MoveBaseGoal move_goal;
 
-    // 목표 지점의 헤더 설정
     move_goal.target_pose.header.frame_id = "map";
     move_goal.target_pose.header.stamp = ros::Time::now();
 
-    // 목표 지점의 위치 설정
     move_goal.target_pose.pose.position.x = goal[0];
     move_goal.target_pose.pose.position.y = goal[1];
     move_goal.target_pose.pose.position.z = 0.0; 
 
-    // 목표 지점의 방향 설정
     move_goal.target_pose.pose.orientation.z = goal[5];
     move_goal.target_pose.pose.orientation.w = goal[6];
 
     ROS_INFO("Sending Goal: [x: %f, y: %f, z: %f, w: %f]", goal[0], goal[1], goal[5], goal[6]);
-    ac.sendGoal(move_goal);
+    ac->sendGoal(move_goal);
 }
 
 void DWAPlannerROS::personDetect(const std_msgs::Float64::ConstPtr& person){
@@ -286,7 +284,6 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
         return false;
     }
  
-    stack = 0;
     // Get the current robot pose
     costmap_ros_->getRobotPose(current_pose_);
     double robot_pose_x = current_pose_.pose.position.x;
@@ -495,11 +492,11 @@ bool DWAPlannerROS::isGoalReached()
     }
 
     if(stack == 2 && dis1){
-      safeMode(*ac, safe1);
+      safeMode(safe1);
     }
 
     if(stack == 2 && dis2){
-      safeMode(*ac, safe2);
+      safeMode(safe2);
     }
 
     return goal_reached_;

@@ -37,7 +37,7 @@ public:
    */
   void initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d::Costmap2DROS* costmap_ros);
 
-  void safeMode(MoveBaseClient& ac, const std::array<float, 7>& goal);
+  void safeMode(std::array<float, 7>& goal);
   void personDetect(const std_msgs::Float64::ConstPtr& person);
   void laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan);
   void laserCallback(const sensor_msgs::LaserScan& scan);
