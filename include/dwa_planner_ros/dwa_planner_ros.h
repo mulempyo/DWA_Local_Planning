@@ -36,7 +36,6 @@ public:
    * @param costmap_ros A pointer to the costmap_2d::Costmap2DROS.
    */
   void initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d::Costmap2DROS* costmap_ros);
-
   void safeMode(std::array<float, 7>& goal);
   void personDetect(const std_msgs::Float64::ConstPtr& person);
   void laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan);
@@ -72,6 +71,7 @@ public:
   ros::Subscriber sub_;
   ros::Subscriber person_sub_;
   ros::Publisher safe_pub_;
+  ros::Subscriber amcl_sub_;
   
 
 private:
