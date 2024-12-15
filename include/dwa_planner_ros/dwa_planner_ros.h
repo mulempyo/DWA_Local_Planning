@@ -99,6 +99,7 @@ private:
   bool goal_reached_;           ///< Whether the goal is reached or not.
   bool dynamic_obstacle_detected;
   bool person_detect;
+  bool safe_mode;
   int size_x_;                  ///< Size of the costmap in the x direction.
   int size_y_;                  ///< Size of the costmap in the y direction.
   int size_x;
