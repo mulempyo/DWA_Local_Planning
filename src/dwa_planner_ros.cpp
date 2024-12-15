@@ -22,7 +22,7 @@ DWAPlannerROS::DWAPlannerROS()
   : initialized_(false), size_x_(0), size_y_(0), goal_reached_(false), rotate(true)
 {
     ros::NodeHandle nh;
-    laser_sub_ = nh.subscribe("scan", 1, &DWAPlannerROS::laserCallback, this);
+    //laser_sub_ = nh.subscribe("scan", 1, &DWAPlannerROS::laserCallback, this);
     person_sub_ = nh.subscribe("person_probability", 10, &DWAPlannerROS::personDetect, this);
 }
 
@@ -139,7 +139,6 @@ void DWAPlannerROS::safeMode(std::array<float, 7>& goal){
 
     //ROS_INFO("Sending Goal: [x: %f, y: %f, z: %f, w: %f]", goal[0], goal[1], goal[5], goal[6]);
     ac->sendGoal(move_goal);
-    ROS_WARN("safe_mode");
 }
 
 void DWAPlannerROS::personDetect(const std_msgs::Float64::ConstPtr& person){
@@ -267,7 +266,8 @@ bool DWAPlannerROS::setPlan(const std::vector<geometry_msgs::PoseStamped>& plan)
     }
 
     goal_reached_ = false;
-    rotate = true; 
+    rotate = true;
+
     ROS_WARN("Start planning.");
     return planner_util_.setPlan(plan);
 }
@@ -344,6 +344,40 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
             rotate = false;  
         }
     }
+
+     double dx1 = robot_pose_x - safe1[0];
+     double dy1 = robot_pose_y - safe1[1];
+     double dx2 = robot_pose_x - safe2[0];
+     double dy2 = robot_pose_y - safe2[1];
+
+     geometry_msgs::PoseStamped safe_1, safe_2;
+     safe_1.pose.position.x = safe1[0];
+     safe_1.pose.position.y = safe1[1];
+     safe_1.pose.position.z = safe1[2];
+     safe_1.pose.orientation.x = safe1[3];
+     safe_1.pose.orientation.y = safe1[4];
+     safe_1.pose.orientation.z = safe1[5];
+     safe_1.pose.orientation.w = safe1[6];
+
+     safe_2.pose.position.x = safe2[0];
+     safe_2.pose.position.y = safe2[1];
+     safe_2.pose.position.z = safe2[2];
+     safe_2.pose.orientation.x = safe2[3];
+     safe_2.pose.orientation.y = safe2[4];
+     safe_2.pose.orientation.z = safe2[5];
+     safe_2.pose.orientation.w = safe2[6];
+
+     
+      if(hypot(dx1,dy1) <= (xy_goal_tolerance_)){
+            safe_pub_.publish(safe_1);
+            safe_mode = false;
+      }
+    
+      if(hypot(dx2,dy2) <= (xy_goal_tolerance_)){
+         safe_pub_.publish(safe_2);
+         safe_mode = false;
+      }
+     
 
     // Now proceed with normal DWA planning
     unsigned int start_mx, start_my, goal_mx, goal_my;
@@ -469,8 +503,8 @@ bool DWAPlannerROS::isGoalReached()
         ROS_INFO("Goal reached. Stack is now: %d", stack);
     }
 
-    geometry_msgs::PoseStamped current_robot;
-    costmap_ros_->getRobotPose(current_robot);
+     geometry_msgs::PoseStamped current_robot;
+     costmap_ros_->getRobotPose(current_robot);
 
      double straight_x1 = safe1[0] - current_robot.pose.position.x;
      double straight_y1 = safe1[1] - current_robot.pose.position.y;
@@ -480,54 +514,23 @@ bool DWAPlannerROS::isGoalReached()
      double straight_y2 = safe2[1] - current_robot.pose.position.y;
      double distance2 = std::hypot(straight_x2, straight_y2);
 
-     bool dis1 = false;
-     bool dis2 = false;
-
-     geometry_msgs::PoseStamped safe_1, safe_2;
-     safe_1.pose.position.x = safe1[0];
-     safe_1.pose.position.y = safe1[1];
-     safe_1.pose.position.z = safe1[2];
-     safe_1.pose.orientation.x = safe1[3];
-     safe_1.pose.orientation.y = safe1[4];
-     safe_1.pose.orientation.z = safe1[5];
-     safe_1.pose.orientation.w = safe1[6];
-
-     safe_2.pose.position.x = safe2[0];
-     safe_2.pose.position.y = safe2[1];
-     safe_2.pose.position.z = safe2[2];
-     safe_2.pose.orientation.x = safe2[3];
-     safe_2.pose.orientation.y = safe2[4];
-     safe_2.pose.orientation.z = safe2[5];
-     safe_2.pose.orientation.w = safe2[6];
-
+     bool dis1,dis2;
+ 
      if(distance1 < distance2){
         dis1 = true;
      }else{
         dis2 = true;
      }
 
-     double dx1 = current_robot.pose.position.x - safe1[0];
-     double dy1 = current_robot.pose.position.y - safe1[1];
-     double dx2 = current_robot.pose.position.x - safe2[0];
-     double dy2 = current_robot.pose.position.y - safe2[1];
-
     if(stack == 2 && dis1){
         goal_reached_ = false;
-        safeMode(safe1);
-
-        if(hypot(dx1,dy1) <= (xy_goal_tolerance_ + 0.1)){
-            safe_pub_.publish(safe_1);
-        }
-    }
-
+        safeMode(safe1); 
+     }
+ 
     if(stack == 2 && dis2){
         goal_reached_ = false;
-        safeMode(safe2); 
-
-        if(hypot(dx2,dy2) <= (xy_goal_tolerance_ + 0.1)){
-         safe_pub_.publish(safe_2);
-        }
-    }
+        safeMode(safe1);
+     }
 
     return goal_reached_;
 }
