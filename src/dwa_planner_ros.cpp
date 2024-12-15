@@ -103,7 +103,7 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
                                   private_nh);
 
         global_plan_pub_ = private_nh.advertise<nav_msgs::Path>("dwa_global_plan", 1);
-        safe_pub_ = private_nh.advertise<move_base_msgs::MoveBaseGoal>("safe_mode", 10);
+        safe_pub_ = private_nh.advertise<geometry_msgs::PoseStamped>("/move_base/DWAPlannerROS/safe_mode", 10);
         planner_util_.initialize(tf_, costmap_, global_frame_);
 
         // 메모리 할당
@@ -125,7 +125,7 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
 }
 
 void DWAPlannerROS::safeMode(std::array<float, 7>& goal){
-  move_base_msgs::MoveBaseGoal move_goal;
+    move_base_msgs::MoveBaseGoal move_goal;
 
     move_goal.target_pose.header.frame_id = "map";
     move_goal.target_pose.header.stamp = ros::Time::now();
@@ -137,8 +137,9 @@ void DWAPlannerROS::safeMode(std::array<float, 7>& goal){
     move_goal.target_pose.pose.orientation.z = goal[5];
     move_goal.target_pose.pose.orientation.w = goal[6];
 
-    ROS_INFO("Sending Goal: [x: %f, y: %f, z: %f, w: %f]", goal[0], goal[1], goal[5], goal[6]);
+    //ROS_INFO("Sending Goal: [x: %f, y: %f, z: %f, w: %f]", goal[0], goal[1], goal[5], goal[6]);
     ac->sendGoal(move_goal);
+    ROS_WARN("safe_mode");
 }
 
 void DWAPlannerROS::personDetect(const std_msgs::Float64::ConstPtr& person){
@@ -184,7 +185,6 @@ void DWAPlannerROS::laserCallback(const sensor_msgs::LaserScan& scan)
         dynamic_obstacle_detected = true;
     }
 
-    // Costmap 업데이트 로직
     std::vector<geometry_msgs::Point> obstacles;
     double angle = scan.angle_min;
 
@@ -199,7 +199,6 @@ void DWAPlannerROS::laserCallback(const sensor_msgs::LaserScan& scan)
         angle += scan.angle_increment;
     }
 
-    // Costmap 크기 확인 및 메모리 할당
     unsigned int new_size_x = costmap_->getSizeInCellsX();
     unsigned int new_size_y = costmap_->getSizeInCellsY();
 
@@ -211,7 +210,6 @@ void DWAPlannerROS::laserCallback(const sensor_msgs::LaserScan& scan)
         allocateMemory();
     }
 
-    // 새로운 장애물 설정
     for (const auto& obs : obstacles) {
         unsigned int mx, my;
         if (costmap_->worldToMap(obs.x, obs.y, mx, my)) {
@@ -219,7 +217,6 @@ void DWAPlannerROS::laserCallback(const sensor_msgs::LaserScan& scan)
         }
     }
 
-    // 기존 장애물 삭제 로직 추가 (필요시)
     for (unsigned int i = 0; i < size_x; ++i) {
         for (unsigned int j = 0; j < size_y; ++j) {
             if (costmap_->getCost(i, j) == costmap_2d::LETHAL_OBSTACLE) {
@@ -270,7 +267,7 @@ bool DWAPlannerROS::setPlan(const std::vector<geometry_msgs::PoseStamped>& plan)
     }
 
     goal_reached_ = false;
-    rotate = true;
+    rotate = true; 
     ROS_WARN("Start planning.");
     return planner_util_.setPlan(plan);
 }
@@ -421,7 +418,8 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
     double dwa_cmd_vel_x, dwa_cmd_vel_theta;
     bool success = planner_->computeVelocityCommands(robot_vel_x, robot_vel_theta, robot_pose_x, robot_pose_y, robot_pose_theta,
                                                      reference_path, charmap_, size_x_, size_y_,
-                                                     resolution, origin_x, origin_y, dwa_cmd_vel_x, dwa_cmd_vel_theta);
+                                                     resolution, origin_x, origin_y, dwa_cmd_vel_x, dwa_cmd_vel_theta);   
+
 
     if (!success)
     {
@@ -449,7 +447,7 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
             if (hypot(dx, dy) <= xy_goal_tolerance_) {
                 cmd_vel.linear.x = 0.0;
                 cmd_vel.angular.z = 0.0;
-                goal_reached_ = true;
+                goal_reached_ = true;  
                 rotate = true;
                 ROS_INFO("Goal reached.");
             }
@@ -467,40 +465,73 @@ bool DWAPlannerROS::isGoalReached()
     }
 
     if(goal_reached_){
-    stack += 1;
-    ROS_INFO("Goal reached. Stack is now: %d", stack);
+        stack += 1;
+        ROS_INFO("Goal reached. Stack is now: %d", stack);
     }
 
     geometry_msgs::PoseStamped current_robot;
     costmap_ros_->getRobotPose(current_robot);
 
-    double straight_x1 = safe1[0] - current_robot.pose.position.x;
-    double straight_y1 = safe1[1] - current_robot.pose.position.y;
-    double distance1 = std::hypot(straight_x1, straight_y1);
+     double straight_x1 = safe1[0] - current_robot.pose.position.x;
+     double straight_y1 = safe1[1] - current_robot.pose.position.y;
+     double distance1 = std::hypot(straight_x1, straight_y1);
 
-    double straight_x2 = safe2[0] - current_robot.pose.position.x;
-    double straight_y2 = safe2[1] - current_robot.pose.position.y;
-    double distance2 = std::hypot(straight_x2, straight_y2);
+     double straight_x2 = safe2[0] - current_robot.pose.position.x;
+     double straight_y2 = safe2[1] - current_robot.pose.position.y;
+     double distance2 = std::hypot(straight_x2, straight_y2);
 
-    bool dis1 = false;
-    bool dis2 = false;
+     bool dis1 = false;
+     bool dis2 = false;
 
-    if(dis1 < dis2){
-      dis1 = true;
-    }else{
-      dis2 = true;
-    }
+     geometry_msgs::PoseStamped safe_1, safe_2;
+     safe_1.pose.position.x = safe1[0];
+     safe_1.pose.position.y = safe1[1];
+     safe_1.pose.position.z = safe1[2];
+     safe_1.pose.orientation.x = safe1[3];
+     safe_1.pose.orientation.y = safe1[4];
+     safe_1.pose.orientation.z = safe1[5];
+     safe_1.pose.orientation.w = safe1[6];
+
+     safe_2.pose.position.x = safe2[0];
+     safe_2.pose.position.y = safe2[1];
+     safe_2.pose.position.z = safe2[2];
+     safe_2.pose.orientation.x = safe2[3];
+     safe_2.pose.orientation.y = safe2[4];
+     safe_2.pose.orientation.z = safe2[5];
+     safe_2.pose.orientation.w = safe2[6];
+
+     if(distance1 < distance2){
+        dis1 = true;
+     }else{
+        dis2 = true;
+     }
+
+     double dx1 = current_robot.pose.position.x - safe1[0];
+     double dy1 = current_robot.pose.position.y - safe1[1];
+     double dx2 = current_robot.pose.position.x - safe2[0];
+     double dy2 = current_robot.pose.position.y - safe2[1];
 
     if(stack == 2 && dis1){
-      safeMode(safe1);
+        goal_reached_ = false;
+        safeMode(safe1);
+
+        if(hypot(dx1,dy1) <= (xy_goal_tolerance_ + 0.1)){
+            safe_pub_.publish(safe_1);
+        }
     }
 
     if(stack == 2 && dis2){
-      safeMode(safe2);
+        goal_reached_ = false;
+        safeMode(safe2); 
+
+        if(hypot(dx2,dy2) <= (xy_goal_tolerance_ + 0.1)){
+         safe_pub_.publish(safe_2);
+        }
     }
 
     return goal_reached_;
 }
+
 
 double DWAPlannerROS::getYaw(const geometry_msgs::PoseStamped& pose) {
     tf2::Quaternion q;
