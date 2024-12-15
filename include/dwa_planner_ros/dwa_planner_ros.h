@@ -36,7 +36,7 @@ public:
    * @param costmap_ros A pointer to the costmap_2d::Costmap2DROS.
    */
   void initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d::Costmap2DROS* costmap_ros);
-  void safeMode(std::array<float, 7>& goal);
+  void safeMode(std_msgs::Float64 safe);
   void personDetect(const std_msgs::Float64::ConstPtr& person);
   void laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan);
   void laserCallback(const sensor_msgs::LaserScan& scan);
@@ -138,7 +138,8 @@ private:
 
   std::array<float,7> safe1;
   std::array<float,7> safe2;
-
+  
+  geometry_msgs::PoseStamped robot_safe1,robot_safe2;
   geometry_msgs::PoseStamped current_pose_;  ///< The current pose of the robot.
 
   base_local_planner::OdometryHelperRos odom_helper_;  ///< Helper to get odometry data.
