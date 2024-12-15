@@ -24,6 +24,7 @@ DWAPlannerROS::DWAPlannerROS()
     ros::NodeHandle nh;
     //laser_sub_ = nh.subscribe("scan", 1, &DWAPlannerROS::laserCallback, this);
     person_sub_ = nh.subscribe("person_probability", 10, &DWAPlannerROS::personDetect, this);
+    amcl_sub_ = nh.subscribe("/safe", 10, &DWAPlannerROS::safeMode, this);
 }
 
 DWAPlannerROS::~DWAPlannerROS()
@@ -103,7 +104,7 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
                                   private_nh);
 
         global_plan_pub_ = private_nh.advertise<nav_msgs::Path>("dwa_global_plan", 1);
-        safe_pub_ = private_nh.advertise<geometry_msgs::PoseStamped>("/move_base/DWAPlannerROS/safe_mode", 10);
+        safe_pub_ = private_nh.advertise<geometry_msgs::PoseStamped>("/move_base/DWAPlannerROS/safe_mode", 1);
         planner_util_.initialize(tf_, costmap_, global_frame_);
 
         // 메모리 할당
@@ -124,21 +125,13 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
     }
 }
 
-void DWAPlannerROS::safeMode(std::array<float, 7>& goal){
-    move_base_msgs::MoveBaseGoal move_goal;
+void DWAPlannerROS::safeMode(std_msgs::Float64 safe){
 
-    move_goal.target_pose.header.frame_id = "map";
-    move_goal.target_pose.header.stamp = ros::Time::now();
+  ROS_WARN("safeMode function in dwa");
+  if(safe.data == -1){
+    safe_mode = false;
+  }
 
-    move_goal.target_pose.pose.position.x = goal[0];
-    move_goal.target_pose.pose.position.y = goal[1];
-    move_goal.target_pose.pose.position.z = 0.0; 
-
-    move_goal.target_pose.pose.orientation.z = goal[5];
-    move_goal.target_pose.pose.orientation.w = goal[6];
-
-    //ROS_INFO("Sending Goal: [x: %f, y: %f, z: %f, w: %f]", goal[0], goal[1], goal[5], goal[6]);
-    ac->sendGoal(move_goal);
 }
 
 void DWAPlannerROS::personDetect(const std_msgs::Float64::ConstPtr& person){
@@ -267,6 +260,7 @@ bool DWAPlannerROS::setPlan(const std::vector<geometry_msgs::PoseStamped>& plan)
 
     goal_reached_ = false;
     rotate = true;
+    safe_mode = true;
 
     ROS_WARN("Start planning.");
     return planner_util_.setPlan(plan);
@@ -280,7 +274,7 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
         ROS_ERROR("DWAPlannerROS has not been initialized, please call initialize() before using this planner");
         return false;
     }
- 
+    
     // Get the current robot pose
     costmap_ros_->getRobotPose(current_pose_);
     double robot_pose_x = current_pose_.pose.position.x;
@@ -345,39 +339,39 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
         }
     }
 
-     double dx1 = robot_pose_x - safe1[0];
-     double dy1 = robot_pose_y - safe1[1];
-     double dx2 = robot_pose_x - safe2[0];
-     double dy2 = robot_pose_y - safe2[1];
-
-     geometry_msgs::PoseStamped safe_1, safe_2;
+     geometry_msgs::PoseStamped safe_1,safe_2;
+     safe_1.header.frame_id = "map";
+     safe_1.header.stamp = ros::Time::now();
      safe_1.pose.position.x = safe1[0];
      safe_1.pose.position.y = safe1[1];
-     safe_1.pose.position.z = safe1[2];
-     safe_1.pose.orientation.x = safe1[3];
-     safe_1.pose.orientation.y = safe1[4];
-     safe_1.pose.orientation.z = safe1[5];
-     safe_1.pose.orientation.w = safe1[6];
 
+     safe_2.header.frame_id = "map";
+     safe_2.header.stamp = ros::Time::now();
      safe_2.pose.position.x = safe2[0];
      safe_2.pose.position.y = safe2[1];
-     safe_2.pose.position.z = safe2[2];
-     safe_2.pose.orientation.x = safe2[3];
-     safe_2.pose.orientation.y = safe2[4];
-     safe_2.pose.orientation.z = safe2[5];
-     safe_2.pose.orientation.w = safe2[6];
 
-     
+     geometry_msgs::TransformStamped transformStamped1 = tf_->lookupTransform("base_footprint", "map", ros::Time(0), ros::Duration(1.0));
+    tf2::doTransform(safe_1, robot_safe1, transformStamped1);
+
+     geometry_msgs::TransformStamped transformStamped2 = tf_->lookupTransform("base_footprint", "map", ros::Time(0), ros::Duration(1.0));
+     tf2::doTransform(safe_2, robot_safe2, transformStamped2);
+
+     double dx1 = robot_pose_x - robot_safe1.pose.position.x;
+     double dy1 = robot_pose_y - robot_safe1.pose.position.y;
+     double dx2 = robot_pose_x - robot_safe2.pose.position.x;
+     double dy2 = robot_pose_y - robot_safe2.pose.position.y;
+
+     if(safe_mode){
+        geometry_msgs::PoseStamped safe_pub;
       if(hypot(dx1,dy1) <= (xy_goal_tolerance_)){
-            safe_pub_.publish(safe_1);
-            safe_mode = false;
+         safe_pub = safe_1; 
       }
     
       if(hypot(dx2,dy2) <= (xy_goal_tolerance_)){
-         safe_pub_.publish(safe_2);
-         safe_mode = false;
+         safe_pub = safe_2; 
       }
-     
+      safe_pub_.publish(safe_pub);
+     }
 
     // Now proceed with normal DWA planning
     unsigned int start_mx, start_my, goal_mx, goal_my;
@@ -497,40 +491,6 @@ bool DWAPlannerROS::isGoalReached()
         ROS_ERROR("DWAPlannerROS has not been initialized, please call initialize() before using this planner");
         return false;
     }
-
-    if(goal_reached_){
-        stack += 1;
-        ROS_INFO("Goal reached. Stack is now: %d", stack);
-    }
-
-     geometry_msgs::PoseStamped current_robot;
-     costmap_ros_->getRobotPose(current_robot);
-
-     double straight_x1 = safe1[0] - current_robot.pose.position.x;
-     double straight_y1 = safe1[1] - current_robot.pose.position.y;
-     double distance1 = std::hypot(straight_x1, straight_y1);
-
-     double straight_x2 = safe2[0] - current_robot.pose.position.x;
-     double straight_y2 = safe2[1] - current_robot.pose.position.y;
-     double distance2 = std::hypot(straight_x2, straight_y2);
-
-     bool dis1,dis2;
- 
-     if(distance1 < distance2){
-        dis1 = true;
-     }else{
-        dis2 = true;
-     }
-
-    if(stack == 2 && dis1){
-        goal_reached_ = false;
-        safeMode(safe1); 
-     }
- 
-    if(stack == 2 && dis2){
-        goal_reached_ = false;
-        safeMode(safe1);
-     }
 
     return goal_reached_;
 }
