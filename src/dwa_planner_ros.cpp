@@ -21,7 +21,7 @@ DWAPlannerROS::DWAPlannerROS()
   : initialized_(false), size_x_(0), size_y_(0), goal_reached_(false), rotate(true), tf_buffer_(), tf_listener_(tf_buffer_)
 {
     ros::NodeHandle nh;
-    //laser_sub_ = nh.subscribe("scan", 1, &DWAPlannerROS::laserCallback, this);
+    laser_sub_ = nh.subscribe("scan", 1, &DWAPlannerROS::laserCallback, this);
     person_sub_ = nh.subscribe("person_probability", 10, &DWAPlannerROS::personDetect, this);
     amcl_sub_ = nh.subscribe("/safe", 10, &DWAPlannerROS::safeMode, this);
 }
@@ -77,7 +77,6 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
         private_nh.param("acc_lim_theta", acc_lim_theta_, 1.2);
         private_nh.param("control_period", control_period_, 0.2);
 
-        // 초기화 변수 설정
         tf_ = tf;
         costmap_ros_ = costmap_ros;
         costmap_ = costmap_ros_->getCostmap();  
@@ -92,11 +91,9 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
         global_frame_ = costmap_ros_->getGlobalFrameID();
         robot_base_frame_ = costmap_ros_->getBaseFrameID();
 
-        // 로봇의 footprint 설정
         footprint_spec_ = costmap_ros_->getRobotFootprint();
         costmap_2d::calculateMinAndMaxDistances(footprint_spec_, robot_inscribed_radius_, robot_circumscribed_radius_);
 
-        // odom helper 초기화
         odom_helper_.setOdomTopic(odom_topic_);
 
         planner_ = new DWAPlanner(costmap_model_, footprint_spec_, robot_inscribed_radius_, robot_circumscribed_radius_,
@@ -106,7 +103,6 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
         safe_pub_ = private_nh.advertise<geometry_msgs::PoseStamped>("/safe_mode", 1);
         planner_util_.initialize(tf_, costmap_, global_frame_);
 
-        // 메모리 할당
         allocateMemory();
         ac = std::make_shared<MoveBaseClient>("move_base", true);
 
@@ -124,7 +120,6 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
         {0.597729f, 0.904205f, 0.0f, 0.0f, 0.0f, -0.951543f, 0.307515f}
         };
 
-        // 초기화 플래그 설정
         initialized_ = true;
 
         ROS_DEBUG("dwa_local_planner plugin initialized.");
@@ -155,37 +150,7 @@ void DWAPlannerROS::personDetect(const std_msgs::Float64::ConstPtr& person){
 void DWAPlannerROS::laserCallback(const sensor_msgs::LaserScan& scan)
 {
     if(initialized_){
-    dynamic_obstacle_detected = false;
-    bool front_obstacle_detected = false;
-    bool back_obstacle_detected = false;
 
-    int front_indices[] = {60, 90, 120, 150, 180, 210, 240, 270, 300};
-    int back_indices[] = {0, 15, 30, 45, 315, 330, 345};
-
-    costmap_ros_->getRobotPose(current_pose_);
-    double robot_x = current_pose_.pose.position.x;
-    double robot_y = current_pose_.pose.position.y;
-    double robot_theta = tf2::getYaw(current_pose_.pose.orientation);
-
-    for (int i = 0; i < sizeof(front_indices)/sizeof(front_indices[0]); i++) {
-        int index = front_indices[i];
-        if (scan.ranges[index] >= scan.range_min && scan.ranges[index] <= (scan.range_min + 0.05)) {
-            float scan_angle = scan.angle_min + index * scan.angle_increment;
-            front_obstacle_detected = checkObstacle(scan.ranges[index], robot_x, robot_y, robot_theta, scan_angle);
-        }
-    }
-
-    for (int j = 0; j < sizeof(back_indices)/sizeof(back_indices[0]); j++) {
-        int index = back_indices[j];
-        if (scan.ranges[index] >= (scan.range_min + 0.1) && scan.ranges[index] <= (scan.range_min + 0.4)) {
-            float scan_angle = scan.angle_min + index * scan.angle_increment;
-            back_obstacle_detected = checkObstacle(scan.ranges[index], robot_x, robot_y, robot_theta, scan_angle);
-        }
-    }
-
-    if(front_obstacle_detected || back_obstacle_detected){
-        dynamic_obstacle_detected = true;
-    }
 
     std::vector<geometry_msgs::Point> obstacles;
     double angle = scan.angle_min;
@@ -201,26 +166,18 @@ void DWAPlannerROS::laserCallback(const sensor_msgs::LaserScan& scan)
         angle += scan.angle_increment;
     }
 
-    unsigned int new_size_x = costmap_->getSizeInCellsX();
-    unsigned int new_size_y = costmap_->getSizeInCellsY();
-
-    if (charmap_ == NULL || size_x_ != new_size_x || size_y_ != new_size_y)
-    {
-        freeMemory();
-        size_x_ = new_size_x;
-        size_y_ = new_size_y;
-        allocateMemory();
-    }
-
     for (const auto& obs : obstacles) {
         unsigned int mx, my;
         if (costmap_->worldToMap(obs.x, obs.y, mx, my)) {
-            costmap_->setCost(mx, my, costmap_2d::LETHAL_OBSTACLE);
+            unsigned char cost = costmap_->getCost(mx,my);
+            if(cost == costmap_2d::LETHAL_OBSTACLE){
+              costmap_->setCost(mx, my, costmap_2d::LETHAL_OBSTACLE);
+          }
         }
-    }
+     }
 
-    for (unsigned int i = 0; i < size_x; ++i) {
-        for (unsigned int j = 0; j < size_y; ++j) {
+    for (unsigned int i = 0; i < size_x_; ++i) {
+        for (unsigned int j = 0; j < size_y_; ++j) {
             if (costmap_->getCost(i, j) == costmap_2d::LETHAL_OBSTACLE) {
                 bool still_obstacle = false;
                 for (const auto& obs : obstacles) {
@@ -239,26 +196,6 @@ void DWAPlannerROS::laserCallback(const sensor_msgs::LaserScan& scan)
 
     
  }
-}
-
-bool DWAPlannerROS::checkObstacle(const double range, const double robot_x, const double robot_y, const double robot_theta, const double scan_angle)
-{
-    double obstacle_x = robot_x + range * cos(robot_theta + scan_angle);
-    double obstacle_y = robot_y + range * sin(robot_theta + scan_angle);
-    unsigned int obstacle_mx, obstacle_my;
-
-    if (!costmap_->worldToMap(obstacle_x, obstacle_y, obstacle_mx, obstacle_my)) {
-        ROS_WARN("invalid map frame");
-        return false;
-    }
-
-    unsigned char cost = costmap_->getCost(obstacle_mx, obstacle_my);
-    if(cost == costmap_2d::LETHAL_OBSTACLE){
-        return false;
-    }
-    else{
-        return true;
-    }
 }
 
 bool DWAPlannerROS::setPlan(const std::vector<geometry_msgs::PoseStamped>& plan)
@@ -378,7 +315,8 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
         double dy = safe_pose_global.pose.position.y - robot_pose_y;
 
         if(hypot(dx, dy) <= xy_goal_tolerance_){
-            safe_pub = safe_pose_global; 
+            safe_pub.pose.position.x = dx;
+            safe_pub.pose.position.y = dy;
         }
     }
     
@@ -472,7 +410,7 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
     }
     else
     {
-        if(dynamic_obstacle_detected || person_detect){
+        if(person_detect){
             cmd_vel.linear.x = 0;
             cmd_vel.angular.z = 0;
         } else {
