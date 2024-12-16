@@ -10,8 +10,7 @@
 #include <sensor_msgs/LaserScan.h>
 #include <memory>
 #include <std_msgs/Float64.h>
-#include <actionlib/client/simple_action_client.h>
-#include <move_base_msgs/MoveBaseAction.h>
+
 
 // register this planner as a BaseLocalPlanner plugin
 PLUGINLIB_EXPORT_CLASS(dwa_planner_ros::DWAPlannerROS, nav_core::BaseLocalPlanner)
@@ -19,7 +18,7 @@ PLUGINLIB_EXPORT_CLASS(dwa_planner_ros::DWAPlannerROS, nav_core::BaseLocalPlanne
 namespace dwa_planner_ros {
 
 DWAPlannerROS::DWAPlannerROS()
-  : initialized_(false), size_x_(0), size_y_(0), goal_reached_(false), rotate(true)
+  : initialized_(false), size_x_(0), size_y_(0), goal_reached_(false), rotate(true), tf_buffer_(), tf_listener_(tf_buffer_)
 {
     ros::NodeHandle nh;
     //laser_sub_ = nh.subscribe("scan", 1, &DWAPlannerROS::laserCallback, this);
@@ -104,15 +103,26 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
                                   private_nh);
 
         global_plan_pub_ = private_nh.advertise<nav_msgs::Path>("dwa_global_plan", 1);
-        safe_pub_ = private_nh.advertise<geometry_msgs::PoseStamped>("/move_base/DWAPlannerROS/safe_mode", 1);
+        safe_pub_ = private_nh.advertise<geometry_msgs::PoseStamped>("/safe_mode", 1);
         planner_util_.initialize(tf_, costmap_, global_frame_);
 
         // 메모리 할당
         allocateMemory();
         ac = std::make_shared<MoveBaseClient>("move_base", true);
 
-        safe1 = {-0.063431f, -0.031137f, 0.0f, 0.0f, 0.0f, 0.19328f, 0.999903f};
-        safe2 = {4.273204f, 0.379562f, 0.0f, 0.0f, 0.0f, -0.998399f, 0.056565f};
+        safes = {
+        {-0.063431f, -0.031137f, 0.0f, 0.0f, 0.0f, 0.19328f, 0.999903f},
+        {4.273204f, 0.379562f, 0.0f, 0.0f, 0.0f, -0.998399f, 0.056565f},
+        {0.758307f, -0.584536f, 0.0f, 0.0f, 0.0f, -0.065801f, 0.997833f},
+        {1.517976f, -0.700481f, 0.0f, 0.0f, 0.0f, 0.077507f, 0.996992f},
+        {2.307844f, -0.628027f, 0.0f, 0.0f, 0.0f, 0.046726f, 0.998908f},
+        {3.243371f, -0.544172f, 0.0f, 0.0f, 0.0f, 0.479464f, 0.877562f},
+        {2.608130f, 0.125702f, 0.0f, 0.0f, 0.0f, -0.999792f, 0.020394f},
+        {3.987488f, 0.935925f, 0.0f, 0.0f, 0.0f, -0.998293f, 0.058406f},
+        {2.584035f, 1.041702f, 0.0f, 0.0f, 0.0f, 0.999876f, 0.015761f},
+        {1.647480f, 1.120834f, 0.0f, 0.0f, 0.0f, 0.999695f, 0.024705f},
+        {0.597729f, 0.904205f, 0.0f, 0.0f, 0.0f, -0.951543f, 0.307515f}
+        };
 
         // 초기화 플래그 설정
         initialized_ = true;
@@ -339,39 +349,44 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
         }
     }
 
-     geometry_msgs::PoseStamped safe_1,safe_2;
-     safe_1.header.frame_id = "map";
-     safe_1.header.stamp = ros::Time::now();
-     safe_1.pose.position.x = safe1[0];
-     safe_1.pose.position.y = safe1[1];
+    geometry_msgs::PoseStamped safe_pub;
 
-     safe_2.header.frame_id = "map";
-     safe_2.header.stamp = ros::Time::now();
-     safe_2.pose.position.x = safe2[0];
-     safe_2.pose.position.y = safe2[1];
+    for(int i = 0; i < 11; i++){
+        geometry_msgs::PoseStamped safe_pose_map;
+        safe_pose_map.header.frame_id = "map";
+        safe_pose_map.header.stamp = ros::Time::now();
+        safe_pose_map.pose.position.x = safes[i][0];
+        safe_pose_map.pose.position.y = safes[i][1];
+        safe_pose_map.pose.position.z = safes[i][2];
+        safe_pose_map.pose.orientation.x = safes[i][3];
+        safe_pose_map.pose.orientation.y = safes[i][4];
+        safe_pose_map.pose.orientation.z = safes[i][5];
+        safe_pose_map.pose.orientation.w = safes[i][6];
+        
+        geometry_msgs::PoseStamped safe_pose_global;
 
-     geometry_msgs::TransformStamped transformStamped1 = tf_->lookupTransform("base_footprint", "map", ros::Time(0), ros::Duration(1.0));
-    tf2::doTransform(safe_1, robot_safe1, transformStamped1);
+        // Transform the PoseStamped to global frame
+        try{
+            safe_pose_global = tf_buffer_.transform(safe_pose_map, global_frame_, ros::Duration(1.0));
+        }
+        catch(tf2::TransformException &ex){
+            ROS_WARN("Transform failed: %s", ex.what());
+            continue; 
+        } 
 
-     geometry_msgs::TransformStamped transformStamped2 = tf_->lookupTransform("base_footprint", "map", ros::Time(0), ros::Duration(1.0));
-     tf2::doTransform(safe_2, robot_safe2, transformStamped2);
+        double dx = safe_pose_global.pose.position.x - robot_pose_x;
+        double dy = safe_pose_global.pose.position.y - robot_pose_y;
 
-     double dx1 = robot_pose_x - robot_safe1.pose.position.x;
-     double dy1 = robot_pose_y - robot_safe1.pose.position.y;
-     double dx2 = robot_pose_x - robot_safe2.pose.position.x;
-     double dy2 = robot_pose_y - robot_safe2.pose.position.y;
-
-     if(safe_mode){
-        geometry_msgs::PoseStamped safe_pub;
-      if(hypot(dx1,dy1) <= (xy_goal_tolerance_)){
-         safe_pub = safe_1; 
-      }
+        if(hypot(dx, dy) <= xy_goal_tolerance_){
+            safe_pub = safe_pose_global; 
+        }
+    }
     
-      if(hypot(dx2,dy2) <= (xy_goal_tolerance_)){
-         safe_pub = safe_2; 
+
+      if(safe_mode){
+        safe_pub_.publish(safe_pub);   
       }
-      safe_pub_.publish(safe_pub);
-     }
+     
 
     // Now proceed with normal DWA planning
     unsigned int start_mx, start_my, goal_mx, goal_my;

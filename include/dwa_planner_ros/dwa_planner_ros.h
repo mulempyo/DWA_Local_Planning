@@ -3,7 +3,8 @@
 
 #include <ros/ros.h>
 #include <tf2/utils.h>
-#include <tf2_ros/buffer.h>
+#include "tf2_ros/buffer.h"
+#include "tf2_ros/transform_listener.h"
 #include <costmap_2d/costmap_2d_ros.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/Twist.h>
@@ -136,14 +137,15 @@ private:
   double robot_inscribed_radius_;  ///< The inscribed radius of the robot.
   double robot_circumscribed_radius_;  ///< The circumscribed radius of the robot.
 
-  std::array<float,7> safe1;
-  std::array<float,7> safe2;
+  std::vector<std::array<float, 7>> safes;
   
   geometry_msgs::PoseStamped robot_safe1,robot_safe2;
   geometry_msgs::PoseStamped current_pose_;  ///< The current pose of the robot.
 
   base_local_planner::OdometryHelperRos odom_helper_;  ///< Helper to get odometry data.
   base_local_planner::LocalPlannerUtil planner_util_;       ///< Utility to assist with planning.
+  tf2_ros::Buffer tf_buffer_;
+  tf2_ros::TransformListener tf_listener_;
 
 };
 
