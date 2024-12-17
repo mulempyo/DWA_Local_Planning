@@ -152,49 +152,60 @@ void DWAPlannerROS::laserCallback(const sensor_msgs::LaserScan& scan)
     if(initialized_){
 
 
-    std::vector<geometry_msgs::Point> obstacles;
+    std::vector<geometry_msgs::PoseStamped> obstacles;
     double angle = scan.angle_min;
 
     for (const auto& range : scan.ranges) {
         if (range >= scan.range_min && range <= scan.range_max) {
-            geometry_msgs::Point obstacle;
-            obstacle.x = range * std::cos(angle);
-            obstacle.y = range * std::sin(angle);
-            obstacle.z = 0.0;
-            obstacles.push_back(obstacle);
+            geometry_msgs::PoseStamped obstacle,obstacle_detect;
+            obstacle.header.frame_id = "laser_link";
+            obstacle.header.stamp = ros::Time::now();
+            obstacle.pose.position.x = range * std::cos(angle);
+            obstacle.pose.position.y = range * std::sin(angle);
+            obstacle.pose.position.z = 0.0;
+ 
+            obstacle_detect = tf_buffer_.transform(obstacle, global_frame_, ros::Duration(1.0));
+
+            obstacles.push_back(obstacle_detect);
         }
         angle += scan.angle_increment;
     }
 
-    for (const auto& obs : obstacles) {
+   for (unsigned int i = 0; i < size_x_; ++i) {
+     for (unsigned int j = 0; j < size_y_; ++j) {
+      for (const auto& obs : obstacles) {
         unsigned int mx, my;
-        if (costmap_->worldToMap(obs.x, obs.y, mx, my)) {
+        if (costmap_->worldToMap(obs.pose.position.x, obs.pose.position.y, mx, my)) {
             unsigned char cost = costmap_->getCost(mx,my);
             if(cost == costmap_2d::LETHAL_OBSTACLE){
               costmap_->setCost(mx, my, costmap_2d::LETHAL_OBSTACLE);
           }
         }
      }
+   }
+  }
 
     for (unsigned int i = 0; i < size_x_; ++i) {
         for (unsigned int j = 0; j < size_y_; ++j) {
-            if (costmap_->getCost(i, j) == costmap_2d::LETHAL_OBSTACLE) {
-                bool still_obstacle = false;
-                for (const auto& obs : obstacles) {
+             for (const auto& obs : obstacles) {
                     unsigned int mx, my;
-                    if (costmap_->worldToMap(obs.x, obs.y, mx, my) && mx == i && my == j) {
-                        still_obstacle = true;
-                        break;
-                    }
-                }
-                if (!still_obstacle) {
-                    costmap_->setCost(i, j, costmap_2d::FREE_SPACE);
+                  if (costmap_->worldToMap(obs.pose.position.x, obs.pose.position.y, mx, my)) {
+                    unsigned char cost = costmap_->getCost(mx,my);
+                   if(cost == costmap_2d::FREE_SPACE){
+                    costmap_->setCost(mx, my, costmap_2d::FREE_SPACE);
+                   }
                 }
             }
         }
     }
 
-    
+    geometry_msgs::PoseStamped current_robot_pose;
+    costmap_ros_->getRobotPose(current_robot_pose);
+    unsigned int robot_mx, robot_my;
+        if (costmap_->worldToMap(current_robot_pose.pose.position.x, current_robot_pose.pose.position.y, robot_mx, robot_my)) {
+            costmap_->setCost(robot_mx, robot_my, costmap_2d::FREE_SPACE);
+        }
+
  }
 }
 
